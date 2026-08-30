@@ -213,3 +213,4 @@ export const ChatModal: React.FC<ChatModalProps> = ({ recipient, onClose }) => {
     </div>
   );
 };
+

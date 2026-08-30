@@ -271,3 +271,4 @@ export const MusicianCard: React.FC<MusicianCardProps> = ({
     </div>
   );
 };
+

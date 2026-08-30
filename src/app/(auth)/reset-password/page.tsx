@@ -96,7 +96,7 @@ export default function ResetPasswordPage() {
             alignItems: 'center',
             gap: '8px',
           }}>
-            <AlertCircle size={16} flexShrink={0} />
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
             <span>{errorMsg}</span>
           </div>
         )}
@@ -114,7 +114,7 @@ export default function ResetPasswordPage() {
             alignItems: 'center',
             gap: '8px',
           }}>
-            <CheckCircle size={16} flexShrink={0} />
+            <CheckCircle size={16} style={{ flexShrink: 0 }} />
             <span>{successMsg}</span>
           </div>
         )}
@@ -197,3 +197,5 @@ export default function ResetPasswordPage() {
     </div>
   );
 }
+
+

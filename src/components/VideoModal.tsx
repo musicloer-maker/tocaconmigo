@@ -187,7 +187,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({
           alignItems: 'center',
           gap: '8px',
         }}>
-          <AlertCircle size={16} flexShrink={0} />
+          <AlertCircle size={16} style={{ flexShrink: 0 }} />
           <span>Recuerda: TocaConmigo no califica la habilidad musical. No hay valoraciones ni estrellas.</span>
         </div>
 
@@ -371,3 +371,4 @@ export const VideoModal: React.FC<VideoModalProps> = ({
     </div>
   );
 };
+

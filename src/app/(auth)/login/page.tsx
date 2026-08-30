@@ -94,7 +94,7 @@ export default function LoginPage() {
             alignItems: 'center',
             gap: '8px',
           }}>
-            <AlertCircle size={16} flexShrink={0} />
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
             <span>{errorMsg}</span>
           </div>
         )}
@@ -191,3 +191,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+
