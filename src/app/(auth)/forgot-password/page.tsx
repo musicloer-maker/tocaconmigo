@@ -107,7 +107,7 @@ export default function ForgotPasswordPage() {
             alignItems: 'center',
             gap: '8px',
           }}>
-            <CheckCircle size={16} style={{ flexShrink: 0 }} />
+           <CheckCircle size={16} style={{ flexShrink: 0 }} />
             <span>{successMsg}</span>
           </div>
         )}
@@ -173,7 +173,3 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
-
-
-
-

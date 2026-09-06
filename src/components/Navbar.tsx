@@ -1,207 +1,135 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { Search, Send, User, LogOut, Video } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { Music, Search, Users, Video, MessageSquare, User, LogIn } from 'lucide-react';
 
 interface NavbarProps {
   activeTab?: string;
   onTabChange?: (tab: string) => void;
-  unreadMessagesCount?: number;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
-  activeTab = 'explore',
-  onTabChange,
-  unreadMessagesCount = 1,
-}) => {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
+  const pathname = usePathname();
+  const router = useRouter();
 
-  useEffect(() => {
+  const handleLogout = async () => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) {
-        setUserEmail(user.email);
-      }
-    });
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email || null);
-    });
+  const navItems = [
+    { id: 'discover', label: 'Explorar', href: '/discover', icon: Search },
+    { id: 'connections', label: 'Propuestas', href: '/connections', icon: Send },
+    { id: 'profile', label: 'Mi Perfil', href: '/profile', icon: User },
+  ];
 
-    return () => subscription.unsubscribe();
-  }, []);
+  const handleItemClick = (href: string, id: string) => {
+    if (onTabChange) {
+      onTabChange(id);
+    }
+    router.push(href);
+  };
 
   return (
     <header style={{
+      backgroundColor: '#181818',
+      borderBottom: '1px solid #2a2a2a',
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      backgroundColor: 'rgba(11, 12, 16, 0.85)',
-      backdropFilter: 'blur(16px)',
-      borderBottom: '1px solid var(--border-color)',
-      padding: '0.8rem 1.5rem',
+      fontFamily: 'system-ui, sans-serif'
     }}>
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: '1000px',
         margin: '0 auto',
+        padding: '0.85rem 1.5rem',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
+        justifyContent: 'space-between'
       }}>
         {/* Logo */}
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, var(--accent-amber), var(--accent-orange))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#000',
-            boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
-          }}>
-            <Music size={22} strokeWidth={2.5} />
-          </div>
-          <div>
-            <span style={{
-              fontSize: '1.25rem',
-              fontWeight: 800,
-              fontFamily: 'var(--font-heading)',
-              letterSpacing: '-0.03em',
-            }}>
-              Toca<span style={{ color: 'var(--accent-amber)' }}>Conmigo</span>
-            </span>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span>Barcelona</span>
-              <span style={{ fontSize: '0.5rem' }}>•</span>
-              <span style={{ color: 'var(--accent-emerald)', fontWeight: 600 }}>Músicos Aficionados</span>
-            </div>
-          </div>
+        <Link href="/discover" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '1.3rem', fontWeight: 900, color: '#e05638', letterSpacing: '-0.5px' }}>
+            TocaConmigo
+          </span>
         </Link>
 
-        {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => onTabChange?.('explore')}
-            className={`btn-secondary ${activeTab === 'explore' ? 'active-tab' : ''}`}
-            style={{
-              padding: '8px 16px',
-              fontSize: '0.9rem',
-              borderColor: activeTab === 'explore' ? 'var(--accent-amber)' : 'var(--border-color)',
-              color: activeTab === 'explore' ? 'var(--accent-amber)' : 'var(--text-primary)',
-            }}
-          >
-            <Search size={16} />
-            <span>Buscar Músicos</span>
-          </button>
+        {/* Links de Navegación */}
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href || activeTab === item.id;
+            return (
+              <button
+                key={item.href}
+                onClick={() => handleItemClick(item.href, item.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '0.5rem 0.85rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.9rem',
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? '#fff' : '#aaa',
+                  backgroundColor: isActive ? '#262626' : 'transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Icon size={16} color={isActive ? '#e05638' : '#aaa'} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
 
-          <button
-            onClick={() => onTabChange?.('jams')}
-            className="btn-secondary"
-            style={{
-              padding: '8px 16px',
-              fontSize: '0.9rem',
-              borderColor: activeTab === 'jams' ? 'var(--accent-amber)' : 'var(--border-color)',
-              color: activeTab === 'jams' ? 'var(--accent-amber)' : 'var(--text-primary)',
-            }}
-          >
-            <Users size={16} />
-            <span>Quedadas (Jams)</span>
-          </button>
-
-          <button
-            onClick={() => onTabChange?.('my-video')}
-            className="btn-secondary"
-            style={{
-              padding: '8px 16px',
-              fontSize: '0.9rem',
-              borderColor: activeTab === 'my-video' ? 'var(--accent-amber)' : 'var(--border-color)',
-              color: activeTab === 'my-video' ? 'var(--accent-amber)' : 'var(--text-primary)',
-            }}
-          >
-            <Video size={16} />
-            <span>Mi Vídeo "Así toco"</span>
-          </button>
-
-          <button
-            onClick={() => onTabChange?.('messages')}
-            className="btn-secondary"
-            style={{
-              padding: '8px 16px',
-              fontSize: '0.9rem',
-              position: 'relative',
-              borderColor: activeTab === 'messages' ? 'var(--accent-amber)' : 'var(--border-color)',
-              color: activeTab === 'messages' ? 'var(--accent-amber)' : 'var(--text-primary)',
-            }}
-          >
-            <MessageSquare size={16} />
-            <span>Mensajes</span>
-            {unreadMessagesCount > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-4px',
-                width: '18px',
-                height: '18px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--accent-orange)',
-                color: '#fff',
-                fontSize: '0.7rem',
-                fontWeight: 700,
+          {/* Botón opcional para activar 'my-video' si existe callback */}
+          {onTabChange && (
+            <button
+              onClick={() => onTabChange('my-video')}
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                {unreadMessagesCount}
-              </span>
-            )}
-          </button>
-        </nav>
-
-        {/* Dynamic Auth Links */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {userEmail ? (
-            <Link
-              href="/dashboard"
-              className="btn-secondary"
-              style={{
-                padding: '8px 14px',
-                fontSize: '0.85rem',
-                borderColor: 'var(--accent-emerald)',
-                color: 'var(--accent-emerald)',
+                gap: '6px',
+                padding: '0.5rem 0.85rem',
+                borderRadius: '8px',
+                border: '1px solid #333',
+                fontSize: '0.9rem',
+                fontWeight: activeTab === 'my-video' ? 700 : 500,
+                color: activeTab === 'my-video' ? '#fff' : '#aaa',
+                backgroundColor: activeTab === 'my-video' ? '#262626' : 'transparent',
+                cursor: 'pointer',
               }}
             >
-              <User size={16} />
-              <span>Zona Privada</span>
-            </Link>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Link
-                href="/login"
-                className="btn-secondary"
-                style={{ padding: '8px 14px', fontSize: '0.85rem' }}
-              >
-                <LogIn size={16} />
-                <span>Entrar</span>
-              </Link>
-
-              <Link
-                href="/register"
-                className="btn-primary"
-                style={{ padding: '8px 14px', fontSize: '0.85rem' }}
-              >
-                <span>Crear Cuenta</span>
-              </Link>
-            </div>
+              <Video size={16} color={activeTab === 'my-video' ? '#e05638' : '#aaa'} />
+              <span>Mi Vídeo</span>
+            </button>
           )}
-        </div>
+
+          <button
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '0.5rem 0.85rem',
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: '#888',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+            }}
+          >
+            <LogOut size={16} />
+          </button>
+        </nav>
       </div>
     </header>
   );
-};
-
+}

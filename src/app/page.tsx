@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Navbar } from '@/components/Navbar';
+import Navbar from '@/components/Navbar';
 import { MusicianCard } from '@/components/MusicianCard';
 import { JamCard } from '@/components/JamCard';
 import { VideoModal } from '@/components/VideoModal';
