@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState } from 'react';
@@ -11,7 +10,6 @@ import {
   ArrowRight,
   AlertCircle,
   Chrome,
-  Apple,
   Phone,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -65,25 +63,6 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-      },
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setSocialLoading(null);
-    }
-  };
-
-  const handleApple = async () => {
-    setErrorMsg(null);
-    setSocialLoading('apple');
-
-    const supabase = createClient();
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
       },
@@ -195,32 +174,6 @@ export default function LoginPage() {
             {socialLoading === 'google'
               ? 'Conectando...'
               : 'Continuar con Google'}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleApple}
-            disabled={socialLoading !== null || loading}
-            style={{
-              width: '100%',
-              minHeight: '46px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.9rem',
-              fontWeight: 650,
-              cursor: 'pointer',
-            }}
-          >
-            <Apple size={19} />
-            {socialLoading === 'apple'
-              ? 'Conectando...'
-              : 'Continuar con Apple'}
           </button>
 
           <button

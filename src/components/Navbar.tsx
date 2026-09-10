@@ -40,25 +40,36 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      fontFamily: 'system-ui, sans-serif'
+      fontFamily: 'system-ui, sans-serif',
+      width: '100%'
     }}>
       <div style={{
         maxWidth: '1000px',
         margin: '0 auto',
-        padding: '0.85rem 1.5rem',
+        padding: '0.75rem 1rem',
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
+        gap: '0.5rem'
       }}>
         {/* Logo */}
         <Link href="/discover" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '1.3rem', fontWeight: 900, color: '#e05638', letterSpacing: '-0.5px' }}>
+          <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#e05638', letterSpacing: '-0.5px' }}>
             TocaConmigo
           </span>
         </Link>
 
-        {/* Links de Navegación */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Links de Navegación con Scroll Horizontal Suave en Móviles */}
+        <nav style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          overflowX: 'auto',
+          maxWidth: '100%',
+          paddingBottom: '2px',
+          WebkitOverflowScrolling: 'touch'
+        }}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || activeTab === item.id;
@@ -69,19 +80,20 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '0.5rem 0.85rem',
+                  gap: '5px',
+                  padding: '0.45rem 0.65rem',
                   borderRadius: '8px',
                   border: 'none',
-                  fontSize: '0.9rem',
+                  fontSize: '0.85rem',
                   fontWeight: isActive ? 700 : 500,
                   color: isActive ? '#fff' : '#aaa',
                   backgroundColor: isActive ? '#262626' : 'transparent',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                <Icon size={16} color={isActive ? '#e05638' : '#aaa'} />
+                <Icon size={15} color={isActive ? '#e05638' : '#aaa'} />
                 <span>{item.label}</span>
               </button>
             );
@@ -94,18 +106,19 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '0.5rem 0.85rem',
+                gap: '5px',
+                padding: '0.45rem 0.65rem',
                 borderRadius: '8px',
                 border: '1px solid #333',
-                fontSize: '0.9rem',
+                fontSize: '0.85rem',
                 fontWeight: activeTab === 'my-video' ? 700 : 500,
                 color: activeTab === 'my-video' ? '#fff' : '#aaa',
                 backgroundColor: activeTab === 'my-video' ? '#262626' : 'transparent',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap'
               }}
             >
-              <Video size={16} color={activeTab === 'my-video' ? '#e05638' : '#aaa'} />
+              <Video size={15} color={activeTab === 'my-video' ? '#e05638' : '#aaa'} />
               <span>Mi Vídeo</span>
             </button>
           )}
@@ -116,17 +129,18 @@ export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              padding: '0.5rem 0.85rem',
+              gap: '5px',
+              padding: '0.45rem 0.65rem',
               borderRadius: '8px',
               border: 'none',
               backgroundColor: 'transparent',
               color: '#888',
               cursor: 'pointer',
-              fontSize: '0.9rem',
+              fontSize: '0.85rem',
+              whiteSpace: 'nowrap'
             }}
           >
-            <LogOut size={16} />
+            <LogOut size={15} />
           </button>
         </nav>
       </div>
