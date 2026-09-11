@@ -1,5 +1,7 @@
+// src/app/layout.tsx
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import Navbar from '@/components/Navbar';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -44,7 +46,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className="overflow-x-hidden">
-      <body className="overflow-x-hidden max-w-full m-0 p-0">{children}</body>
+      <body className="overflow-x-hidden max-w-full m-0 p-0">
+        <Navbar />
+        <main>{children}</main>
+      </body>
     </html>
   );
 }

@@ -39,8 +39,7 @@ export default function ConnectionsPage() {
 
         if (authError || !user) {
           if (isMounted) {
-            setErrorMessage('Debes iniciar sesión para ver tus solicitudes.');
-            setLoading(false);
+            router.push('/login');
           }
           return;
         }

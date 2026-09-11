@@ -1,168 +1,97 @@
-'use client';
+import Image from 'next/image'
+import Link from 'next/link'
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
-
-interface MusicianProfile {
-  id: string;
-  full_name?: string;
-  avatar_url?: string;
-  instrument?: string;
-  genre?: string;
-  location?: string;
-}
-
-export default function HomePage() {
-  const router = useRouter();
-  const supabase = createClient();
-
-  const [loading, setLoading] = useState<boolean>(true);
-  const [profiles, setProfiles] = useState<MusicianProfile[]>([]);
-
-  useEffect(() => {
-    async function initPage() {
-      try {
-        setLoading(true);
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          router.push('/discover');
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .limit(6);
-
-        if (!error && Array.isArray(data)) {
-          setProfiles(data as MusicianProfile[]);
-        }
-      } catch (err) {
-        console.error('Error inicializando:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    initPage();
-  }, [router, supabase]);
-
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="badge badge-amber" style={{ padding: '12px 24px', fontSize: '1rem' }}>
-          Cargando TocaConmigo...
-        </div>
-      </div>
-    );
-  }
-
+export default function LandingPage() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '20px' }}>
-      
-      {/* Navegación Superior */}
-      <header style={{ maxWidth: '1200px', width: '100%', margin: '0 auto 40px auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 className="text-gradient" style={{ fontSize: '1.8rem', fontWeight: 800 }}>
-          TocaConmigo
-        </h1>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={() => router.push('/login')} className="btn-secondary">
+    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col justify-between">
+      {/* Header Público */}
+      <header className="px-6 py-5 border-b border-stone-800 flex justify-between items-center max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-2 text-2xl font-bold tracking-tight text-amber-500">
+          <span>TocaConmigo</span>
+          <span className="text-amber-600 text-xl">»))</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/login"
+            className="text-sm font-medium text-stone-300 hover:text-amber-400 transition"
+          >
             Iniciar Sesión
-          </button>
-          <button onClick={() => router.push('/register')} className="btn-primary">
-            Registrarse
-          </button>
+          </Link>
+          <Link
+            href="/register"
+            className="text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-stone-950 px-4 py-2 rounded-full transition"
+          >
+            Crear Cuenta
+          </Link>
         </div>
       </header>
 
-      {/* Hero Principal con Imagen de Banner */}
-      <section style={{ maxWidth: '900px', margin: '0 auto 60px auto', textAlign: 'center' }}>
-        <div className="badge badge-amber" style={{ marginBottom: '20px' }}>
-          <span className="pulse-indicator"></span> Músicos aficionados en Barcelona
-        </div>
-        <h2 className="text-gradient" style={{ fontSize: '2.8rem', lineHeight: 1.2, marginBottom: '20px' }}>
-          Conecta con músicos cerca de ti y organiza tu próxima sesión
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', marginBottom: '32px' }}>
-          Encuentra bajistas, guitarristas, cantantes o baterías cerca de ti. Explora perfiles y empieza a tocar juntos.
-        </p>
-
-        {/* Renderizado de la imagen desde public/og-image.png */}
-        <div 
-          className="glass-panel" 
-          style={{ 
-            overflow: 'hidden', 
-            borderRadius: 'var(--radius-lg)', 
-            marginBottom: '32px',
-            border: '1px solid var(--border-color)'
-          }}
-        >
-          <img 
-            src="/og-image.png" 
-            alt="Músicos en Barcelona - TocaConmigo" 
-            style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/register')} className="btn-primary" style={{ padding: '16px 32px', fontSize: '1.1rem' }}>
-            Unirse a la comunidad
-          </button>
-          <button onClick={() => router.push('/login')} className="btn-secondary" style={{ padding: '16px 32px', fontSize: '1.1rem' }}>
-            Explorar plataforma
-          </button>
-        </div>
-      </section>
-
-      {/* Grid de Músicos / Comunidad */}
-      <section style={{ maxWidth: '1100px', width: '100%', margin: '0 auto 60px auto' }}>
-        <h3 style={{ fontSize: '1.3rem', marginBottom: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          Músicos destacados
-        </h3>
-
-        {(!profiles || profiles.length === 0) ? (
-          <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Sé de los primeros en unirte a la red de músicos aficionados.
+      {/* Hero Section con la Imagen Oficial */}
+      <main className="max-w-7xl mx-auto px-6 py-12 flex-1 flex flex-col justify-center">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          
+          {/* Texto Descriptivo y Propósito */}
+          <div className="space-y-6">
+            <span className="inline-block px-3 py-1 bg-amber-950/80 border border-amber-800/50 text-amber-400 text-xs font-semibold uppercase tracking-wider rounded-full">
+              Comunidad de Músicos
+            </span>
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-stone-100 leading-tight">
+              Encuentra otros músicos y toca en directo.
+            </h1>
+            <p className="text-stone-400 text-lg leading-relaxed">
+              El objetivo de <strong className="text-stone-200">TocaConmigo</strong> es conectar a personas que buscan armar una Jam, formar una banda o simplemente juntarse y divertirse haciendo música.
             </p>
-            <button onClick={() => router.push('/register')} className="btn-primary">
-              Crear mi Perfil
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-            {profiles?.map((profile) => (
-              <div 
-                key={profile.id || Math.random().toString()} 
-                className="glass-panel glass-panel-interactive"
-                onClick={() => router.push('/login')}
-                style={{ padding: '24px', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <div style={{ width: '70px', height: '70px', borderRadius: 'var(--radius-full)', background: 'var(--bg-surface-hover)', margin: '0 auto 16px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)', color: 'var(--accent-gold)', fontSize: '1.5rem', fontWeight: 700 }}>
-                  {(profile.full_name || 'M')[0]}
-                </div>
-                <h4 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>
-                  {profile.full_name || 'Músico'}
-                </h4>
-                <div style={{ marginBottom: '12px' }}>
-                  <span className="badge badge-indigo">
-                    {profile.instrument || 'Instrumento'}
-                  </span>
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  {profile.location || 'Barcelona'}
-                </p>
+            
+            <div className="space-y-3 text-sm text-stone-300">
+              <div className="flex items-center gap-3">
+                <span className="text-amber-500 font-bold">✓</span>
+                <span>Ubicación aproximada por zona para cuidar al 100% tu privacidad.</span>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+              <div className="flex items-center gap-3">
+                <span className="text-amber-500 font-bold">✓</span>
+                <span>Sube tu video de presentación tocando tu instrumento.</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-amber-500 font-bold">✓</span>
+                <span>Conecta por estilos musicales e instrumentos compatibles.</span>
+              </div>
+            </div>
 
-      {/* Pie de página */}
-      <footer style={{ borderTop: '1px solid var(--border-color)', paddingTop: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-        © {new Date().getFullYear()} TocaConmigo Barcelona. Todos los derechos reservados.
+            <div className="pt-4 flex flex-wrap gap-4">
+              <Link
+                href="/register"
+                className="bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-8 py-3.5 rounded-xl shadow-lg transition text-center"
+              >
+                Unirme a la comunidad
+              </Link>
+              <Link
+                href="/login"
+                className="border border-stone-700 hover:border-stone-500 text-stone-200 font-semibold px-8 py-3.5 rounded-xl transition text-center"
+              >
+                Ya tengo cuenta
+              </Link>
+            </div>
+          </div>
+
+          {/* Imagen Promocional */}
+          <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-stone-800">
+            <Image
+              src="/og-image.png"
+              alt="Músicos tocando juntos en Barcelona"
+              width={1200}
+              height={675}
+              priority
+              className="w-full h-auto object-cover"
+            />
+          </div>
+
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-stone-900 py-6 text-center text-xs text-stone-500">
+        © {new Date().getFullYear()} TocaConmigo. Privacidad garantizada para todos los músicos.
       </footer>
     </div>
-  );
+  )
 }

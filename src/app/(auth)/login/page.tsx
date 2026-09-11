@@ -1,416 +1,140 @@
-'use client';
+'use client'
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import {
-  Music,
-  Lock,
-  Mail,
-  ArrowRight,
-  AlertCircle,
-  Chrome,
-  Phone,
-} from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<string | null>(null);
-
-  const router = useRouter();
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const router = useRouter()
+  const supabase = createClient()
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-
-    if (!email || !password) {
-      setErrorMsg('Por favor introduce tu email y contraseña.');
-      return;
-    }
-
-    setLoading(true);
-
-    const supabase = createClient();
+    e.preventDefault()
+    setLoading(true)
+    setErrorMsg(null)
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
-    });
+    })
 
     if (error) {
-      setErrorMsg(
-        error.message === 'Invalid login credentials'
-          ? 'Email o contraseña incorrectos. Por favor compruébalos.'
-          : error.message
-      );
-      setLoading(false);
-      return;
+      setErrorMsg(error.message)
+      setLoading(false)
+    } else {
+      router.push('/dashboard')
+      router.refresh()
     }
+  }
 
-    router.push('/dashboard');
-    router.refresh();
-  };
-
-  const handleGoogle = async () => {
-    setErrorMsg(null);
-    setSocialLoading('google');
-
-    const supabase = createClient();
-
-    const { error } = await supabase.auth.signInWithOAuth({
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setSocialLoading(null);
-    }
-  };
-
-  const handlePhone = () => {
-    router.push('/login/phone');
-  };
+    })
+  }
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem 1rem',
-        background:
-          'radial-gradient(circle at top, rgba(245,158,11,0.08), transparent 35%), var(--bg-primary)',
-      }}
-    >
-      <div
-        className="glass-panel"
-        style={{
-          width: '100%',
-          maxWidth: '430px',
-          padding: '2.5rem 2rem',
-          border: '1px solid var(--border-glow)',
-        }}
-      >
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div
-            style={{
-              width: '54px',
-              height: '54px',
-              borderRadius: '16px',
-              background:
-                'linear-gradient(135deg, var(--accent-amber), var(--accent-orange))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#000',
-              margin: '0 auto 1rem',
-              boxShadow: '0 6px 24px rgba(245,158,11,0.28)',
-            }}
-          >
-            <Music size={28} strokeWidth={2.5} />
-          </div>
-
-          <h1
-            style={{
-              fontSize: '1.65rem',
-              fontWeight: 800,
-              margin: 0,
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Bienvenido a TocaConmigo
-          </h1>
-
-          <p
-            style={{
-              fontSize: '0.9rem',
-              color: 'var(--text-secondary)',
-              marginTop: '0.55rem',
-              lineHeight: 1.5,
-            }}
-          >
-            Conecta con músicos y encuentra tu próxima quedada en Barcelona.
-          </p>
+    <div className="min-h-screen bg-stone-950 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-stone-900 border border-stone-800 p-8 rounded-2xl shadow-xl">
+        <div className="text-center mb-6">
+          <Link href="/" className="text-2xl font-bold text-amber-500 inline-block mb-2">
+            TocaConmigo »))
+          </Link>
+          <h2 className="text-xl font-semibold text-stone-100">Iniciar Sesión</h2>
         </div>
 
-        {/* Social login */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.7rem',
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={socialLoading !== null || loading}
-            style={{
-              width: '100%',
-              minHeight: '46px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.9rem',
-              fontWeight: 650,
-              cursor: 'pointer',
-            }}
-          >
-            <Chrome size={18} />
-            {socialLoading === 'google'
-              ? 'Conectando...'
-              : 'Continuar con Google'}
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePhone}
-            disabled={socialLoading !== null || loading}
-            style={{
-              width: '100%',
-              minHeight: '46px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              fontSize: '0.9rem',
-              fontWeight: 650,
-              cursor: 'pointer',
-            }}
-          >
-            <Phone size={18} />
-            Continuar con teléfono
-          </button>
-        </div>
-
-        {/* Separator */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            margin: '1.5rem 0',
-            color: 'var(--text-muted)',
-            fontSize: '0.75rem',
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              height: '1px',
-              background: 'var(--border-color)',
-            }}
-          />
-          <span>o continúa con tu email</span>
-          <div
-            style={{
-              flex: 1,
-              height: '1px',
-              background: 'var(--border-color)',
-            }}
-          />
-        </div>
-
-        {/* Error */}
         {errorMsg && (
-          <div
-            style={{
-              backgroundColor: 'rgba(224,86,56,0.15)',
-              border: '1px solid var(--accent-terracotta)',
-              color: '#fca5a5',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.85rem',
-              marginBottom: '1.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <AlertCircle size={16} style={{ flexShrink: 0 }} />
-            <span>{errorMsg}</span>
+          <div className="bg-red-950/80 border border-red-800 text-red-200 text-xs p-3 rounded-lg mb-4">
+            {errorMsg}
           </div>
         )}
 
-        {/* Email login */}
-        <form
-          onSubmit={handleLogin}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1.15rem',
-          }}
+        {/* Botón de Google */}
+        <button
+          onClick={handleGoogleLogin}
+          type="button"
+          className="w-full flex items-center justify-center gap-3 bg-stone-800 hover:bg-stone-700 text-stone-100 font-medium py-2.5 rounded-xl border border-stone-700 transition mb-4"
         >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="#EA4335"
+              d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.3 9 5 12 5z"
+            />
+            <path
+              fill="#4285F4"
+              d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 10.8 0 12s.7 2.3 1.9 4.7l3.7-2.9z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.3-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"
+            />
+          </svg>
+          Continuar con Google
+        </button>
+
+        <div className="relative my-6 text-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-stone-800"></div>
+          </div>
+          <span className="relative bg-stone-900 px-3 text-xs text-stone-500 uppercase tracking-wider">
+            o con tu correo
+          </span>
+        </div>
+
+        {/* Formulario Tradicional */}
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label
-              style={{
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                display: 'block',
-                marginBottom: '6px',
-              }}
-            >
-              Correo electrónico
-            </label>
-
-            <div style={{ position: 'relative' }}>
-              <Mail
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)',
-                }}
-              />
-
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 12px 12px 40px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                }}
-              />
-            </div>
+            <label className="block text-xs text-stone-400 mb-1">Correo Electrónico</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2.5 text-stone-100 text-sm focus:outline-none focus:border-amber-500"
+              placeholder="tu@email.com"
+            />
           </div>
 
           <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '6px',
-              }}
-            >
-              <label
-                style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                }}
-              >
-                Contraseña
-              </label>
-
-              <Link
-                href="/forgot-password"
-                style={{
-                  fontSize: '0.8rem',
-                  color: 'var(--accent-amber)',
-                }}
-              >
-                ¿La has olvidado?
-              </Link>
-            </div>
-
-            <div style={{ position: 'relative' }}>
-              <Lock
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)',
-                }}
-              />
-
-              <input
-                type="password"
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 12px 12px 40px',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                }}
-              />
-            </div>
+            <label className="block text-xs text-stone-400 mb-1">Contraseña</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2.5 text-stone-100 text-sm focus:outline-none focus:border-amber-500"
+              placeholder="••••••••"
+            />
           </div>
 
           <button
             type="submit"
-            disabled={loading || socialLoading !== null}
-            className="btn-primary"
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-              padding: '12px',
-              marginTop: '4px',
-            }}
+            disabled={loading}
+            className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl transition mt-2 disabled:opacity-50"
           >
-            {loading ? (
-              <span>Iniciando sesión...</span>
-            ) : (
-              <>
-                <span>Iniciar sesión</span>
-                <ArrowRight size={16} />
-              </>
-            )}
+            {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
 
-        {/* Register */}
-        <div
-          style={{
-            textAlign: 'center',
-            marginTop: '1.75rem',
-            paddingTop: '1.25rem',
-            borderTop: '1px solid var(--border-color)',
-            fontSize: '0.85rem',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          ¿Aún no tienes cuenta?{' '}
-          <Link
-            href="/register"
-            style={{
-              color: 'var(--accent-gold)',
-              fontWeight: 700,
-            }}
-          >
-            Regístrate gratis
+        <p className="text-center text-xs text-stone-400 mt-6">
+          ¿No tienes cuenta?{' '}
+          <Link href="/register" className="text-amber-500 font-semibold hover:underline">
+            Regístrate aquí
           </Link>
-        </div>
+        </p>
       </div>
-    </main>
-  );
+    </div>
+  )
 }

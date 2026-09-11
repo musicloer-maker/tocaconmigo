@@ -4,6 +4,10 @@ import React, { useState } from 'react';
 import { MusicianProfile } from '@/types';
 import { calculateHaversineDistanceKm, getProximityBucket } from '@/lib/zones';
 import { MapPin, Video, MessageSquare, ShieldAlert } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+
+// Cliente estable fuera del componente
+const supabase = createClient();
 
 interface MusicianCardProps {
   musician: MusicianProfile;
@@ -24,6 +28,33 @@ export const MusicianCard: React.FC<MusicianCardProps> = ({
 }) => {
   const [showSecurityMenu, setShowSecurityMenu] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
+
+  const handleReport = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Debes iniciar sesión para reportar a un usuario.');
+        return;
+      }
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: user.id,
+        reported_profile_id: musician.id,
+        reason: 'comportamiento_inapropiado',
+        details: `Reportado desde el perfil de @${musician.username}`,
+        status: 'pendiente',
+      });
+      if (error) {
+        console.error('Error enviando reporte:', error);
+        alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
+      } else {
+        setReportSent(true);
+        setShowSecurityMenu(false);
+      }
+    } catch (err) {
+      console.error('Error:', err);
+    }
+  };
 
   const distKm = musician.zone
     ? calculateHaversineDistanceKm(
@@ -250,25 +281,27 @@ export const MusicianCard: React.FC<MusicianCardProps> = ({
             >
               Bloquear a {musician.display_name}
             </button>
-            <button
-              onClick={() => {
-                alert(`Reporte enviado sobre el usuario @${musician.username}. Nuestro equipo revisará el caso.`);
-                setShowSecurityMenu(false);
-              }}
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: '0.8rem',
-                textAlign: 'left',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              Reportar comportamiento o contenido
-            </button>
+            {reportSent ? (
+              <p style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)', padding: '6px 12px' }}>
+                ✓ Reporte enviado. Gracias.
+              </p>
+            ) : (
+              <button
+                onClick={handleReport}
+                style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.8rem',
+                  textAlign: 'left',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                }}
+              >
+                Reportar comportamiento o contenido
+              </button>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
-

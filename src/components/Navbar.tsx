@@ -1,149 +1,99 @@
-'use client';
+'use client'
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { Search, Send, User, LogOut, Video } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
 
-interface NavbarProps {
-  activeTab?: string;
-  onTabChange?: (tab: string) => void;
-}
+export default function Navbar() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+  
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState<number>(0)
 
-export default function Navbar({ activeTab, onTabChange }: NavbarProps) {
-  const pathname = usePathname();
-  const router = useRouter();
+  useEffect(() => {
+    async function loadUserData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // Cargar foto de perfil para la barra
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .single()
+
+      if (profile) setAvatarUrl(profile.avatar_url)
+    }
+
+    loadUserData()
+  }, [supabase])
 
   const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
-  const navItems = [
-    { id: 'discover', label: 'Explorar', href: '/discover', icon: Search },
-    { id: 'connections', label: 'Propuestas', href: '/connections', icon: Send },
-    { id: 'profile', label: 'Mi Perfil', href: '/profile', icon: User },
-  ];
-
-  const handleItemClick = (href: string, id: string) => {
-    if (onTabChange) {
-      onTabChange(id);
-    }
-    router.push(href);
-  };
+  const navLinks = [
+    { label: '🔥 Descubrir', href: '/feed' },
+    { label: '💬 Matches', href: '/matches' },
+    { label: '👤 Perfil', href: '/profile' },
+  ]
 
   return (
-    <header style={{
-      backgroundColor: '#181818',
-      borderBottom: '1px solid #2a2a2a',
-      position: 'sticky',
-      top: 0,
-      zIndex: 50,
-      fontFamily: 'system-ui, sans-serif',
-      width: '100%'
-    }}>
-      <div style={{
-        maxWidth: '1000px',
-        margin: '0 auto',
-        padding: '0.75rem 1rem',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '0.5rem'
-      }}>
-        {/* Logo */}
-        <Link href="/discover" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#e05638', letterSpacing: '-0.5px' }}>
-            TocaConmigo
+    <header className="w-full bg-stone-900/80 backdrop-blur-md border-b border-stone-800 sticky top-0 z-50">
+      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        
+        {/* LOGO */}
+        <Link href="/feed" className="flex items-center gap-2">
+          <span className="text-2xl font-black bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent tracking-wider">
+            JAMMATCH
           </span>
         </Link>
 
-        {/* Links de Navegación con Scroll Horizontal Suave en Móviles */}
-        <nav style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          overflowX: 'auto',
-          maxWidth: '100%',
-          paddingBottom: '2px',
-          WebkitOverflowScrolling: 'touch'
-        }}>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href || activeTab === item.id;
+        {/* MENÚ NAVEGACIÓN */}
+        <nav className="flex items-center gap-1 sm:gap-2">
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href
             return (
-              <button
-                key={item.href}
-                onClick={() => handleItemClick(item.href, item.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '0.45rem 0.65rem',
-                  borderRadius: '8px',
-                  border: 'none',
-                  fontSize: '0.85rem',
-                  fontWeight: isActive ? 700 : 500,
-                  color: isActive ? '#fff' : '#aaa',
-                  backgroundColor: isActive ? '#262626' : 'transparent',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap'
-                }}
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                  isActive
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+                }`}
               >
-                <Icon size={15} color={isActive ? '#e05638' : '#aaa'} />
-                <span>{item.label}</span>
-              </button>
-            );
+                {link.label}
+              </Link>
+            )
           })}
+        </nav>
 
-          {/* Botón opcional para activar 'my-video' si existe callback */}
-          {onTabChange && (
-            <button
-              onClick={() => onTabChange('my-video')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '0.45rem 0.65rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                fontSize: '0.85rem',
-                fontWeight: activeTab === 'my-video' ? 700 : 500,
-                color: activeTab === 'my-video' ? '#fff' : '#aaa',
-                backgroundColor: activeTab === 'my-video' ? '#262626' : 'transparent',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Video size={15} color={activeTab === 'my-video' ? '#e05638' : '#aaa'} />
-              <span>Mi Vídeo</span>
-            </button>
+        {/* USUARIO & LOGOUT */}
+        <div className="flex items-center gap-3">
+          {avatarUrl && (
+            <Link href="/profile" className="hidden sm:block">
+              <img
+                src={avatarUrl}
+                alt="Mi Perfil"
+                className="w-8 h-8 rounded-full object-cover border border-amber-500/40 hover:scale-105 transition"
+              />
+            </Link>
           )}
 
           <button
             onClick={handleLogout}
-            title="Cerrar sesión"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '0.45rem 0.65rem',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: 'transparent',
-              color: '#888',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              whiteSpace: 'nowrap'
-            }}
+            className="text-xs font-semibold text-stone-400 hover:text-red-400 border border-stone-800 hover:border-red-950 px-3 py-1.5 rounded-lg transition"
           >
-            <LogOut size={15} />
+            Salir
           </button>
-        </nav>
+        </div>
+
       </div>
     </header>
-  );
+  )
 }

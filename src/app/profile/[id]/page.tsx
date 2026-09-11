@@ -1,338 +1,290 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
-import { User, Music, MapPin, ArrowLeft, Send, Check, AlertCircle } from 'lucide-react';
 
-type ProfileDetail = {
+interface ProfileData {
   id: string;
-  display_name: string | null;
   username: string | null;
-  bio: string | null;
+  display_name: string | null;
+  full_name: string | null;
   avatar_url: string | null;
+  bio: string | null;
   location_zone: string | null;
-  instruments: { name: string }[];
-  music_styles: { name: string }[];
-  looking_for: { name: string }[];
-};
+  travel_radius_km: number | null;
+  video_url: string | null;
+}
 
 export default function PublicProfilePage() {
   const params = useParams();
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
-
   const profileId = params?.id as string;
 
-  const [profile, setProfile] = useState<ProfileDetail | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [instruments, setInstruments] = useState<string[]>([]);
+  const [styles, setStyles] = useState<string[]>([]);
+  const [lookingFor, setLookingFor] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const [connectStatus, setConnectStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
-  const [connectMessage, setConnectMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchProfileData = async () => {
-      if (!profileId) return;
+    if (!profileId) return;
 
-      setLoading(true);
-      setErrorMsg(null);
+    const supabase = createClient();
 
-      // Obtener usuario autenticado si existe
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
+    async function loadData() {
+      try {
+        setLoading(true);
+        setError(null);
 
-      // Consulta base del perfil
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', profileId)
-        .maybeSingle();
+        // 1. Obtener el usuario autenticado actual
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setCurrentUserId(user.id);
+        }
 
-      if (profileError || !profileData) {
-        console.error('Error cargando perfil:', profileError);
-        setErrorMsg('No se ha podido encontrar el perfil de este músico.');
+        // 2. Traer la información base del perfil (sin joins frágiles)
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, full_name, avatar_url, bio, location_zone, travel_radius_km, video_url')
+          .eq('id', profileId)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        if (!profileData) {
+          setError('El perfil buscado no existe.');
+          return;
+        }
+
+        setProfile(profileData);
+
+        // 3. Cargar Instrumentos (protegido contra fallos)
+        try {
+          const { data: instData } = await supabase
+            .from('profile_instruments')
+            .select('instruments(name)')
+            .eq('profile_id', profileId);
+
+          if (instData) {
+            const list = instData.map((i: any) => i.instruments?.name).filter(Boolean);
+            setInstruments(list);
+          }
+        } catch (e) {
+          console.warn('Error al cargar instrumentos:', e);
+        }
+
+        // 4. Cargar Estilos (evalúa si se llama music_styles o styles)
+        try {
+          const { data: styleData } = await supabase
+            .from('profile_styles')
+            .select('music_styles(name), styles(name)')
+            .eq('profile_id', profileId);
+
+          if (styleData) {
+            const list = styleData
+              .map((s: any) => s.music_styles?.name || s.styles?.name)
+              .filter(Boolean);
+            setStyles(list);
+          }
+        } catch (e) {
+          console.warn('Error al cargar estilos:', e);
+        }
+
+        // 5. Cargar Búsquedas / Preferencias (protegido contra fallos)
+        try {
+          const { data: lookData } = await supabase
+            .from('profile_looking_for')
+            .select('looking_for(name)')
+            .eq('profile_id', profileId);
+
+          if (lookData) {
+            const list = lookData.map((l: any) => l.looking_for?.name).filter(Boolean);
+            setLookingFor(list);
+          }
+        } catch (e) {
+          console.warn('Error al cargar búsquedas:', e);
+        }
+
+      } catch (err: any) {
+        console.error('Error cargando el perfil:', err);
+        setError('No se pudo cargar la información del perfil.');
+      } finally {
         setLoading(false);
-        return;
       }
-
-      // Consultar relaciones por separado para mayor fiabilidad
-      const [instRes, stylesRes, lookingRes] = await Promise.all([
-        supabase
-          .from('profile_instruments')
-          .select('instruments ( name )')
-          .eq('profile_id', profileId),
-        supabase
-          .from('profile_styles')
-          .select('music_styles ( name )')
-          .eq('profile_id', profileId),
-        supabase
-          .from('profile_looking_for')
-          .select('looking_for ( name )')
-          .eq('profile_id', profileId),
-      ]);
-
-      const instruments = (instRes.data || [])
-        .map((i: any) => i.instruments)
-        .filter(Boolean);
-
-      const music_styles = (stylesRes.data || [])
-        .map((s: any) => s.music_styles)
-        .filter(Boolean);
-
-      const looking_for = (lookingRes.data || [])
-        .map((l: any) => l.looking_for)
-        .filter(Boolean);
-
-      setProfile({
-        id: profileData.id,
-        display_name: profileData.display_name,
-        username: profileData.username,
-        bio: profileData.bio,
-        avatar_url: profileData.avatar_url,
-        location_zone: profileData.location_zone,
-        instruments,
-        music_styles,
-        looking_for,
-      });
-
-      setLoading(false);
-    };
-
-    fetchProfileData();
-  }, [profileId, supabase]);
-
-  const handleConnect = async () => {
-    if (!currentUserId || !profileId) return;
-
-    setConnectStatus('sending');
-
-    const { error } = await supabase.from('connections').insert({
-      sender_id: currentUserId,
-      receiver_id: profileId,
-      status: 'pending',
-      message: connectMessage.trim() || '¡Hola! Me gustaría conectar contigo para tocar.',
-    });
-
-    if (error) {
-      console.error('Error enviando conexión:', error.message);
     }
 
-    setConnectStatus('sent');
-  };
+    loadData();
+  }, [profileId]);
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '2rem 1.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-secondary)' }}>
-        Cargando perfil del músico...
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-zinc-400">Cargando perfil...</p>
       </div>
     );
   }
 
-  if (errorMsg || !profile) {
+  if (error || !profile) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '2rem 1.5rem' }}>
-        <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-          <button
-            onClick={() => router.back()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              marginBottom: '1.5rem',
-            }}
-          >
-            <ArrowLeft size={18} /> Volver a la búsqueda
-          </button>
-          <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <AlertCircle size={32} style={{ marginBottom: '1rem', color: 'var(--accent-terracotta, #e05638)' }} />
-            <p>{errorMsg || 'Perfil no encontrado.'}</p>
-          </div>
-        </div>
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
+        <p className="text-red-400 mb-4">{error || 'Perfil no encontrado.'}</p>
+        <Link
+          href="/"
+          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition"
+        >
+          Volver al inicio
+        </Link>
       </div>
     );
   }
+
+  const displayName =
+    profile.display_name || profile.full_name || profile.username || 'Músico sin nombre';
 
   const isOwnProfile = currentUserId === profile.id;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '2rem 1.5rem' }}>
-      <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-        <button
-          onClick={() => router.back()}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            marginBottom: '1.5rem',
-            fontSize: '0.9rem',
-          }}
-        >
-          <ArrowLeft size={18} /> Volver a la búsqueda
-        </button>
+    <div className="min-h-screen bg-black text-white pb-12">
+      {/* Banner / Cabecera */}
+      <div className="h-48 bg-gradient-to-r from-amber-600 to-orange-600 relative" />
 
-        <div className="glass-panel" style={{ padding: '2rem', border: '1px solid var(--border-glow, rgba(255,255,255,0.1))', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1.25rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-            {profile.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                alt={profile.display_name || ''}
-                style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }}
-              />
-            ) : (
-              <div style={{
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--bg-surface, #1e1e1e)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid var(--border-color, #333)',
-              }}>
-                <User size={36} />
-              </div>
-            )}
-
-            <div style={{ flex: 1 }}>
-              <h1 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '4px' }}>
-                {profile.display_name || 'Músico de TocaConmigo'}
-              </h1>
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-20 relative z-10">
+        {/* Foto de Perfil e Info Básica */}
+        <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 text-center sm:text-left">
+            <div className="relative w-32 h-32 rounded-full overflow-hidden border-4 border-black bg-zinc-800 flex items-center justify-center">
+              {profile.avatar_url ? (
+                <Image
+                  src={profile.avatar_url}
+                  alt={displayName}
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <span className="text-4xl font-bold text-zinc-400">
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">{displayName}</h1>
               {profile.username && (
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)', marginBottom: '8px' }}>
-                  @{profile.username.replace(/^@/, '')}
-                </p>
+                <p className="text-zinc-400">@{profile.username}</p>
               )}
               {profile.location_zone && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary, #ccc)', fontSize: '0.85rem' }}>
-                  <MapPin size={16} />
-                  <span>{profile.location_zone}</span>
-                </div>
+                <p className="text-sm text-amber-500 mt-1">
+                  📍 {profile.location_zone}
+                  {profile.travel_radius_km
+                    ? ` (Radio de desplazamiento: ${profile.travel_radius_km} km)`
+                    : ''}
+                </p>
               )}
             </div>
           </div>
 
-          {profile.bio && (
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)', marginBottom: '6px' }}>Sobre mí</h3>
-              <p style={{ color: 'var(--text-primary, #fff)', fontSize: '0.92rem', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                {profile.bio}
-              </p>
-            </div>
-          )}
-
-          {profile.instruments.length > 0 && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Music size={15} /> Instrumentos
-              </h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {profile.instruments.map((inst, idx) => (
-                  <span key={idx} style={{ padding: '5px 10px', borderRadius: '999px', backgroundColor: 'var(--bg-surface, #2a2a2a)', border: '1px solid var(--border-color, #444)', fontSize: '0.8rem' }}>
-                    {inst.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {profile.music_styles.length > 0 && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)', marginBottom: '6px' }}>Estilos musicales</h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {profile.music_styles.map((style, idx) => (
-                  <span key={idx} style={{ padding: '5px 10px', borderRadius: '999px', backgroundColor: 'var(--bg-surface, #2a2a2a)', border: '1px solid var(--border-color, #444)', fontSize: '0.8rem' }}>
-                    {style.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {profile.looking_for.length > 0 && (
-            <div>
-              <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)', marginBottom: '6px' }}>Busca</h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {profile.looking_for.map((item, idx) => (
-                  <span key={idx} style={{ padding: '5px 10px', borderRadius: '999px', backgroundColor: 'var(--bg-surface, #2a2a2a)', border: '1px solid var(--border-color, #444)', fontSize: '0.8rem' }}>
-                    {item.name}
-                  </span>
-                ))}
-              </div>
-            </div>
+          {/* Botón de edición si es el dueño del perfil */}
+          {isOwnProfile && (
+            <Link
+              href="/profile"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black font-semibold rounded-lg transition"
+            >
+              ✏️ Editar mi Perfil
+            </Link>
           )}
         </div>
 
-        {!isOwnProfile && (
-          <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid var(--border-glow, rgba(255,255,255,0.1))' }}>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '8px' }}>
-              ¿Quieres tocar con {profile.display_name || 'este músico'}?
-            </h2>
-            <p style={{ color: 'var(--text-secondary, #ccc)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Envíale una propuesta para poneros en contacto o coordinar una jam session.
+        {/* Rejilla de Información */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Biografía / Sobre mí */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-3 text-amber-500">Sobre mí</h2>
+            <p className="text-zinc-300 whitespace-pre-line">
+              {profile.bio || 'Aún no ha añadido una descripción.'}
             </p>
+          </div>
 
-            {connectStatus === 'sent' ? (
-              <div style={{ padding: '12px', backgroundColor: 'rgba(34, 197, 94, 0.15)', border: '1px solid #22c55e', borderRadius: '8px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}>
-                <Check size={18} />
-                <span>¡Solicitud enviada con éxito! Le notificaremos a {profile.display_name}.</span>
-              </div>
+          {/* Vídeo de Presentación */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-3 text-amber-500">
+              🎬 Vídeo de Presentación
+            </h2>
+            {profile.video_url ? (
+              <video
+                src={profile.video_url}
+                controls
+                className="w-full rounded-lg bg-black max-h-64 object-cover"
+              />
             ) : (
-              <div>
-                <textarea
-                  placeholder="Escribe un mensaje corto (ej. '¡Hola! Toco la guitarra y me gustaría improvisar algo de funk contigo...')"
-                  value={connectMessage}
-                  onChange={(e) => setConnectMessage(e.target.value)}
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    backgroundColor: 'var(--bg-surface, #1e1e1e)',
-                    border: '1px solid var(--border-color, #333)',
-                    borderRadius: '8px',
-                    padding: '10px 12px',
-                    color: 'var(--text-primary, #fff)',
-                    fontSize: '0.85rem',
-                    marginBottom: '1rem',
-                    outline: 'none',
-                    resize: 'none',
-                  }}
-                />
-                <button
-                  onClick={handleConnect}
-                  disabled={connectStatus === 'sending'}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor: 'var(--accent-terracotta, #e05638)',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '10px 18px',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    fontSize: '0.88rem',
-                    cursor: connectStatus === 'sending' ? 'not-allowed' : 'pointer',
-                    opacity: connectStatus === 'sending' ? 0.7 : 1,
-                  }}
-                >
-                  <Send size={16} />
-                  {connectStatus === 'sending' ? 'Enviando...' : 'Enviar propuesta de jam'}
-                </button>
-              </div>
+              <p className="text-zinc-500 italic">
+                Aún no ha subido ningún vídeo de presentación.
+              </p>
             )}
           </div>
-        )}
+
+          {/* Instrumentos */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-3 text-amber-500">🎸 Instrumentos</h2>
+            {instruments.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {instruments.map((inst, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-full text-sm"
+                  >
+                    {inst}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-zinc-500 italic">No ha especificado instrumentos.</p>
+            )}
+          </div>
+
+          {/* Estilos musicales */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-3 text-amber-500">🎵 Estilos</h2>
+            {styles.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {styles.map((style, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-full text-sm"
+                  >
+                    {style}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-zinc-500 italic">No ha especificado estilos musicales.</p>
+            )}
+          </div>
+
+          {/* Buscando / Preferencias */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 md:col-span-2">
+            <h2 className="text-xl font-semibold mb-3 text-amber-500">🔍 Buscando</h2>
+            {lookingFor.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {lookingFor.map((item, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-full text-sm"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-zinc-500 italic">No ha añadido preferencias de búsqueda.</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
