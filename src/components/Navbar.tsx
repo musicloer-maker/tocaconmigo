@@ -49,7 +49,7 @@ export default function Navbar() {
         {/* LOGO */}
         <Link href="/feed" className="flex items-center gap-2">
           <span className="text-2xl font-black bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent tracking-wider">
-            JAMMATCH
+            TocaConmigo
           </span>
         </Link>
 

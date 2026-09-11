@@ -16,7 +16,7 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, any> }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({
             request,
@@ -36,22 +36,38 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone()
   const pathname = url.pathname
 
-  // 1. Definición de Rutas Privadas y Públicas
+  // 1. Verificación de usuarios baneados
+  if (user) {
+    const { data: bannedData } = await supabase
+      .from('banned_users')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (bannedData) {
+      await supabase.auth.signOut()
+      url.pathname = '/login'
+      url.searchParams.set('banned', 'true')
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // 2. Control de acceso por rutas
   const privateRoutes = ['/feed', '/matches', '/profile', '/dashboard', '/connections', '/messages']
-  const isPrivateRoute = privateRoutes.some(route =>
-    pathname === route || pathname.startsWith(route + '/')
+  const isPrivateRoute = privateRoutes.some(
+    (route) => pathname === route || pathname.startsWith(route + '/')
   )
-  
-  // Excepción: Permite ver perfiles públicos si la ruta es /profile/[id]
+
+  // Excepción para perfiles públicos /profile/[id]
   const isPublicProfileView = pathname.match(/^\/profile\/[^/]+/)
 
-  // 2. Si no hay usuario y trata de entrar a ruta privada -> Redirigir a /login
+  // Redirigir a login si intenta entrar a ruta privada sin usuario
   if (isPrivateRoute && !isPublicProfileView && !user) {
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // 3. Si YA hay usuario e intenta ir a /login o /register -> Redirigir a /feed
+  // Redirigir a feed si ya está logueado e intenta ir a auth
   if (user && (pathname === '/login' || pathname === '/register')) {
     url.pathname = '/feed'
     return NextResponse.redirect(url)
@@ -61,7 +77,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // El matcher analiza todas las páginas excluyendo archivos estáticos (imágenes, CSS, JS, favicon)
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

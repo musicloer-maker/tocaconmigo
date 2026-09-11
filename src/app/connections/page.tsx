@@ -1,277 +1,253 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { User, ArrowLeft, MessageSquare, Send, Inbox, Check, X, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import Navbar from '@/components/Navbar'
+import { ArrowLeft, MessageSquare, Trash2, MapPin, UserCheck } from 'lucide-react'
 
-type ConnectionRequest = {
-  id: string;
-  sender_id: string;
-  receiver_id: string;
-  status: 'pending' | 'accepted' | 'rejected';
-  message: string | null;
-  created_at: string;
+interface SavedContact {
+  id: string
+  contact_id: string
+  created_at: string
   profile: {
-    id: string;
-    display_name: string | null;
-    username: string | null;
-    avatar_url: string | null;
-    location_zone: string | null;
-  } | null;
-};
+    id: string
+    full_name: string | null
+    display_name: string | null
+    username: string | null
+    avatar_url: string | null
+    location_zone: string | null
+    zone: string | null
+    bio: string | null
+    instruments: string[] | null
+  } | null
+}
 
 export default function ConnectionsPage() {
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'received' | 'sent'>('received');
-  const [receivedRequests, setReceivedRequests] = useState<ConnectionRequest[]>([]);
-  const [sentRequests, setSentRequests] = useState<ConnectionRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const router = useRouter()
+  const [contacts, setContacts] = useState<SavedContact[]>([])
+  const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const supabase = createClient()
 
   useEffect(() => {
-    let isMounted = true;
+    let isMounted = true
 
-    const fetchConnections = async () => {
+    const fetchSavedContacts = async () => {
       try {
-        const supabase = createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
 
         if (authError || !user) {
-          if (isMounted) {
-            router.push('/login');
-          }
-          return;
+          if (isMounted) router.push('/login')
+          return
         }
 
-        // 1. Recibidas
-        const { data: receivedData, error: recErr } = await supabase
-          .from('connections')
+        // 1. Consultar contactos guardados
+        const { data: contactsData, error: contactsErr } = await supabase
+          .from('contacts')
           .select('*')
-          .eq('receiver_id', user.id)
-          .order('created_at', { ascending: false });
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
 
-        if (recErr) console.error('Error fetching received:', recErr);
+        if (contactsErr) throw contactsErr
 
-        if (receivedData && receivedData.length > 0) {
-          const senderIds = Array.from(new Set(receivedData.map(r => r.sender_id)));
-          const { data: pData } = await supabase
+        if (contactsData && contactsData.length > 0) {
+          const contactUserIds = contactsData.map((c) => c.contact_id)
+
+          // 2. Obtener perfiles de los contactos
+          const { data: profilesData } = await supabase
             .from('profiles')
-            .select('id, display_name, username, avatar_url, location_zone')
-            .in('id', senderIds);
+            .select('id, full_name, display_name, username, avatar_url, location_zone, zone, bio, instruments')
+            .in('id', contactUserIds)
 
-          const profilesMap = Object.fromEntries((pData || []).map(p => [p.id, p]));
+          const profilesMap = Object.fromEntries((profilesData || []).map((p) => [p.id, p]))
+
           if (isMounted) {
-            setReceivedRequests(receivedData.map(r => ({ ...r, profile: profilesMap[r.sender_id] || null })));
-          }
-        }
-
-        // 2. Enviadas
-        const { data: sentData, error: sentErr } = await supabase
-          .from('connections')
-          .select('*')
-          .eq('sender_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (sentErr) console.error('Error fetching sent:', sentErr);
-
-        if (sentData && sentData.length > 0) {
-          const receiverIds = Array.from(new Set(sentData.map(r => r.receiver_id)));
-          const { data: pData } = await supabase
-            .from('profiles')
-            .select('id, display_name, username, avatar_url, location_zone')
-            .in('id', receiverIds);
-
-          const profilesMap = Object.fromEntries((pData || []).map(p => [p.id, p]));
-          if (isMounted) {
-            setSentRequests(sentData.map(r => ({ ...r, profile: profilesMap[r.receiver_id] || null })));
+            setContacts(
+              contactsData.map((c) => ({
+                ...c,
+                profile: profilesMap[c.contact_id] || null,
+              }))
+            )
           }
         }
       } catch (err: any) {
-        console.error('Error en fetchConnections:', err);
-        if (isMounted) setErrorMessage(err.message || 'Error desconocido');
+        console.error('Error en fetchSavedContacts:', err)
+        if (isMounted) setErrorMessage(err.message || 'Error al cargar contactos')
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) setLoading(false)
       }
-    };
+    }
 
-    fetchConnections();
+    fetchSavedContacts()
 
     return () => {
-      isMounted = false;
-    };
-  }, []);
+      isMounted = false
+    }
+  }, [router, supabase])
 
-  const handleUpdateStatus = async (id: string, newStatus: 'accepted' | 'rejected') => {
-    const supabase = createClient();
+  // Eliminar un contacto de la agenda
+  const handleRemoveContact = async (contactId: string) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return
+
     const { error } = await supabase
-      .from('connections')
-      .update({ status: newStatus })
-      .eq('id', id);
+      .from('contacts')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('contact_id', contactId)
 
     if (!error) {
-      setReceivedRequests(prev =>
-        prev.map(item => (item.id === id ? { ...item, status: newStatus } : item))
-      );
+      setContacts((prev) => prev.filter((c) => c.contact_id !== contactId))
+    } else {
+      console.error('Error al eliminar contacto:', error)
     }
-  };
-
-  const requestsToDisplay = activeTab === 'received' ? receivedRequests : sentRequests;
+  }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#121212', padding: '2rem 1.5rem', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '750px', margin: '0 auto' }}>
-        <button
-          onClick={() => router.push('/discover')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'none',
-            border: 'none',
-            color: '#aaa',
-            cursor: 'pointer',
-            marginBottom: '1.5rem',
-            fontSize: '0.95rem',
-          }}
-        >
-          <ArrowLeft size={18} /> Volver al buscador
-        </button>
+    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col font-sans">
+      <Navbar />
 
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.5rem' }}>
-          Propuestas de Jam
-        </h1>
-        <p style={{ color: '#aaa', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
-          Gestiona las invitaciones y conexiones con otros músicos.
-        </p>
-
-        <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid #333', marginBottom: '1.5rem' }}>
+      <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-6 space-y-6">
+        <div>
           <button
-            onClick={() => setActiveTab('received')}
-            style={{
-              padding: '0.75rem 1rem',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === 'received' ? '2px solid #e05638' : '2px solid transparent',
-              color: activeTab === 'received' ? '#fff' : '#888',
-              fontWeight: activeTab === 'received' ? 700 : 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
+            onClick={() => router.push('/feed')}
+            className="flex items-center gap-2 text-stone-400 hover:text-stone-200 text-xs font-semibold mb-4 transition"
           >
-            <Inbox size={18} /> Recibidas ({receivedRequests.length})
+            <ArrowLeft size={16} /> Volver al directorio
           </button>
 
-          <button
-            onClick={() => setActiveTab('sent')}
-            style={{
-              padding: '0.75rem 1rem',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === 'sent' ? '2px solid #e05638' : '2px solid transparent',
-              color: activeTab === 'sent' ? '#fff' : '#888',
-              fontWeight: activeTab === 'sent' ? 700 : 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <Send size={18} /> Enviadas ({sentRequests.length})
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-500">
+              <UserCheck size={24} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-stone-100">Mi Agenda de Músicos</h1>
+              <p className="text-xs text-stone-400">
+                Contactos guardados para futuras jam sessions o proyectos
+              </p>
+            </div>
+          </div>
         </div>
 
         {errorMessage ? (
-          <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#1e1e1e', borderRadius: '12px', border: '1px solid #444' }}>
-            <p style={{ color: '#f87171', marginBottom: '1rem' }}>{errorMessage}</p>
+          <div className="p-6 text-center bg-stone-900 border border-red-500/30 rounded-2xl">
+            <p className="text-red-400 text-sm mb-3">{errorMessage}</p>
             <button
               onClick={() => router.push('/login')}
-              style={{ padding: '0.5rem 1rem', backgroundColor: '#e05638', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+              className="px-4 py-2 bg-amber-500 text-stone-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition"
             >
               Ir a Iniciar Sesión
             </button>
           </div>
         ) : loading ? (
-          <div style={{ padding: '3rem 2rem', textAlign: 'center', color: '#888' }}>
-            Cargando solicitudes...
+          <div className="py-12 text-center text-stone-500 text-sm">
+            Cargando tu agenda de contactos...
           </div>
-        ) : requestsToDisplay.length === 0 ? (
-          <div style={{ padding: '3rem 2rem', textAlign: 'center', color: '#888', border: '1px dashed #333', borderRadius: '12px' }}>
-            <MessageSquare size={36} style={{ marginBottom: '0.75rem', opacity: 0.5 }} />
-            <p>
-              {activeTab === 'received'
-                ? 'No has recibido ninguna propuesta de jam por ahora.'
-                : 'No has enviado ninguna propuesta de jam todavía.'}
+        ) : contacts.length === 0 ? (
+          <div className="py-16 text-center border border-dashed border-stone-800 rounded-2xl bg-stone-900/50 space-y-3">
+            <MessageSquare size={36} className="mx-auto text-stone-600" />
+            <p className="text-stone-300 font-semibold text-sm">Aún no tienes contactos guardados.</p>
+            <p className="text-xs text-stone-500 max-w-sm mx-auto">
+              Explora el directorio de músicos y guarda aquellos con los que te interese conectar.
             </p>
+            <button
+              onClick={() => router.push('/feed')}
+              className="mt-2 inline-block px-4 py-2 bg-amber-500 text-stone-950 font-bold rounded-xl text-xs hover:bg-amber-400 transition"
+            >
+              Explorar directorio
+            </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {requestsToDisplay.map((item) => (
-              <div key={item.id} style={{ padding: '1.25rem', borderRadius: '12px', backgroundColor: '#1e1e1e', border: '1px solid #333' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', backgroundColor: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <User size={22} color="#e05638" />
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>
-                        {item.profile?.display_name || 'Músico de TocaConmigo'}
-                      </h3>
-                      {item.profile?.location_zone && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#888', fontSize: '0.825rem', marginTop: '2px' }}>
-                          <MapPin size={13} /> {item.profile.location_zone}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {contacts.map((item) => {
+              const p = item.profile
+              if (!p) return null
+
+              const name = p.display_name || p.full_name || 'Músico'
+              const location = p.location_zone || p.zone
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-stone-900 border border-stone-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {p.avatar_url ? (
+                          <img
+                            src={p.avatar_url}
+                            alt={name}
+                            className="w-12 h-12 rounded-full object-cover border border-amber-500/40"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold border border-stone-700">
+                            {name.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-stone-100 text-base leading-tight">
+                            {name}
+                          </h3>
+                          {p.username && <p className="text-xs text-amber-500">@{p.username}</p>}
+                          {location && (
+                            <div className="flex items-center gap-1 text-[11px] text-stone-400 mt-0.5">
+                              <MapPin size={12} /> {location}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
+
+                    {p.bio && (
+                      <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
+                        {p.bio}
+                      </p>
+                    )}
+
+                    {p.instruments && p.instruments.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {p.instruments.map((inst) => (
+                          <span
+                            key={inst}
+                            className="bg-stone-800 text-stone-300 text-[11px] px-2 py-0.5 rounded-md border border-stone-700"
+                          >
+                            {inst}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <span style={{
-                    fontSize: '0.75rem',
-                    padding: '4px 10px',
-                    borderRadius: '20px',
-                    fontWeight: 600,
-                    backgroundColor: item.status === 'accepted' ? 'rgba(34, 197, 94, 0.15)' : item.status === 'rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                    color: item.status === 'accepted' ? '#4ade80' : item.status === 'rejected' ? '#f87171' : '#facc15',
-                  }}>
-                    {item.status === 'accepted' ? 'Aceptada' : item.status === 'rejected' ? 'Rechazada' : 'Pendiente'}
-                  </span>
+                  <div className="pt-3 border-t border-stone-800 flex items-center gap-2">
+                    <a
+                      href={`/messages?user=${p.id}`}
+                      className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 py-2 px-3 rounded-xl text-xs font-bold text-center transition flex items-center justify-center gap-1.5"
+                    >
+                      <MessageSquare size={14} /> Contactar
+                    </a>
+
+                    <button
+                      onClick={() => handleRemoveContact(p.id)}
+                      title="Eliminar de mi agenda"
+                      className="p-2 text-stone-500 hover:text-red-400 bg-stone-950 hover:bg-red-500/10 border border-stone-800 hover:border-red-500/30 rounded-xl transition"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
-
-                {item.message && (
-                  <p style={{ backgroundColor: '#141414', padding: '0.85rem 1rem', borderRadius: '8px', fontSize: '0.9rem', color: '#ddd', margin: '0.75rem 0', borderLeft: '3px solid #e05638' }}>
-                    "{item.message}"
-                  </p>
-                )}
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid #2a2a2a' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                    {new Date(item.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-                  </span>
-
-                  {activeTab === 'received' && item.status === 'pending' && (
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        onClick={() => handleUpdateStatus(item.id, 'rejected')}
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #444', backgroundColor: 'transparent', color: '#ccc', cursor: 'pointer', fontSize: '0.85rem' }}
-                      >
-                        <X size={15} /> Rechazar
-                      </button>
-                      <button
-                        onClick={() => handleUpdateStatus(item.id, 'accepted')}
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0.4rem 0.8rem', borderRadius: '6px', border: 'none', backgroundColor: '#e05638', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-                      >
-                        <Check size={15} /> Aceptar
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
-      </div>
+      </main>
     </div>
-  );
+  )
 }

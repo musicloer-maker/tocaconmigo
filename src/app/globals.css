@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --bg-primary: #0b0c10;
   --bg-surface: #13151d;
@@ -9,7 +13,7 @@
   --border-glow: rgba(245, 158, 11, 0.3);
 
   --accent-amber: #f59e0b;
-  --accent-gold: #fbbf24;
+  --accent-gold: #fbbf24;   
   --accent-orange: #f97316;
   --accent-terracotta: #e05638;
   --accent-indigo: #6366f1;

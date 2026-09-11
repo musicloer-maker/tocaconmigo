@@ -1,48 +1,73 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Navbar from '@/components/Navbar'
+import { addContact } from '@/app/actions/contacts'
 
 interface Profile {
   id: string
   full_name: string
+  display_name?: string
   username: string
   avatar_url: string
   bio: string
   video_url: string
   zone: string
+  location_zone?: string
   instruments: string[]
   genres: string[]
 }
 
 export default function FeedPage() {
   const supabase = createClient()
+  const [myProfile, setMyProfile] = useState<Profile | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [savedContactIds, setSavedContactIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [matchNotification, setMatchNotification] = useState<Profile | null>(null)
+
+  // Estados para los filtros
+  const [searchTerm, setSearchTerm] = useState('')
+  const [instrumentFilter, setInstrumentFilter] = useState('')
+  const [zoneFilter, setZoneFilter] = useState('')
+
+  const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
-    async function fetchProfiles() {
-      const { data: { user } } = await supabase.auth.getUser()
+    async function fetchData() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) return
       setCurrentUserId(user.id)
 
-      // Obtener perfiles que el usuario actual aún no ha evaluado (swiped)
-      const { data: swipedData } = await supabase
-        .from('swipes')
-        .select('receiver_id')
-        .eq('sender_id', user.id)
+      // 1. Obtener mi propio perfil
+      const { data: userSelfProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
 
-      const swipedIds = swipedData ? swipedData.map(s => s.receiver_id) : []
-      const excludeIds = [...swipedIds, user.id]
+      if (userSelfProfile) {
+        setMyProfile(userSelfProfile)
+      }
 
+      // 2. Obtener lista de IDs de contactos que ya tengo guardados
+      const { data: contactsData } = await supabase
+        .from('contacts')
+        .select('contact_id')
+        .eq('user_id', user.id)
+
+      if (contactsData) {
+        setSavedContactIds(contactsData.map((c) => c.contact_id))
+      }
+
+      // 3. Obtener todos los músicos configurados (directorio permanente)
       const { data: availableProfiles } = await supabase
         .from('profiles')
         .select('*')
-        .not('id', 'in', `(${excludeIds.join(',')})`)
+        .neq('id', user.id)
         .eq('is_configured', true)
 
       if (availableProfiles) {
@@ -51,157 +76,223 @@ export default function FeedPage() {
       setLoading(false)
     }
 
-    fetchProfiles()
+    fetchData()
   }, [supabase])
 
-  const handleSwipe = async (type: 'like' | 'pass') => {
-    if (!currentUserId || currentIndex >= profiles.length) return
-
-    const targetProfile = profiles[currentIndex]
-
-    // 1. Guardar el swipe en Supabase
-    await supabase.from('swipes').insert({
-      sender_id: currentUserId,
-      receiver_id: targetProfile.id,
-      type
-    })
-
-    // 2. Si es LIKE, verificar si hay MATCH mutuo
-    if (type === 'like') {
-      const { data: reciprocalLike } = await supabase
-        .from('swipes')
-        .select('*')
-        .eq('sender_id', targetProfile.id)
-        .eq('receiver_id', currentUserId)
-        .eq('type', 'like')
-        .single()
-
-      if (reciprocalLike) {
-        // Registrar el match
-        await supabase.from('matches').insert({
-          user1_id: currentUserId,
-          user2_id: targetProfile.id
-        })
-        setMatchNotification(targetProfile)
-      }
+  // Función para guardar contacto llamando a la Server Action del Paso 2
+  const handleSaveContact = async (contactId: string) => {
+    try {
+      await addContact(contactId)
+      setSavedContactIds((prev) => [...prev, contactId])
+    } catch (err) {
+      console.error('Error al guardar contacto:', err)
     }
-
-    // Avanzar a la siguiente tarjeta
-    setCurrentIndex(prev => prev + 1)
   }
 
-  const currentProfile = profiles[currentIndex]
+  // Filtrado local instantáneo de los músicos
+  const filteredProfiles = profiles.filter((p) => {
+    const name = p.display_name || p.full_name || ''
+    const matchesSearch =
+      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.bio?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    const matchesInstrument = instrumentFilter
+      ? p.instruments?.some((inst) =>
+          inst.toLowerCase().includes(instrumentFilter.toLowerCase())
+        )
+      : true
+
+    const zoneText = p.location_zone || p.zone || ''
+    const matchesZone = zoneFilter
+      ? zoneText.toLowerCase().includes(zoneFilter.toLowerCase())
+      : true
+
+    return matchesSearch && matchesInstrument && matchesZone
+  })
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 flex flex-col items-center justify-center p-4">
-        {loading ? (
-          <p className="text-stone-400">Cargando músicos cercanos...</p>
-        ) : matchNotification ? (
-          /* Modal o Pantalla de Match */
-          <div className="bg-stone-900 border border-amber-500/40 p-8 rounded-2xl max-w-sm w-full text-center space-y-4 animate-in fade-in zoom-in duration-300">
-            <h2 className="text-3xl font-black text-amber-500">¡ES UN MATCH! 🎉</h2>
-            <p className="text-sm text-stone-300">
-              Tú y <span className="font-semibold text-white">{matchNotification.full_name}</span> se han dado Me Gusta mutuamente.
-            </p>
-            <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-2 border-amber-500">
-              <img src={matchNotification.avatar_url || '/placeholder.jpg'} alt="Match" className="w-full h-full object-cover" />
+      <main className="flex-1 max-w-5xl mx-auto w-full p-4 space-y-6">
+        {/* --- SECCIÓN: MI PERFIL (ASÍ TE VEN LOS OTROS) --- */}
+        {myProfile && (
+          <section className="bg-stone-900 border border-amber-500/30 rounded-2xl p-4 shadow-xl space-y-3">
+            <div className="flex justify-between items-center border-b border-stone-800 pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-500">
+                Así te ven otros músicos en el directorio
+              </span>
+              <a href="/profile" className="text-xs text-stone-400 hover:text-white underline">
+                Editar perfil
+              </a>
             </div>
-            <button
-              onClick={() => setMatchNotification(null)}
-              className="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold py-3 rounded-xl transition"
-            >
-              Seguir explorando
-            </button>
-          </div>
-        ) : currentProfile ? (
-          /* Tarjeta de Músico */
-          <div className="max-w-md w-full bg-stone-900 border border-stone-800 rounded-3xl overflow-hidden shadow-2xl space-y-4 pb-6">
-            
-            {/* Contenedor Multimedia: Foto o Video */}
-            <div className="relative w-full h-80 bg-stone-950">
-              {currentProfile.video_url ? (
-                <video
-                  src={currentProfile.video_url}
-                  controls
-                  className="w-full h-full object-cover"
-                />
-              ) : currentProfile.avatar_url ? (
+
+            <div className="flex items-center gap-3">
+              {myProfile.avatar_url ? (
                 <img
-                  src={currentProfile.avatar_url}
-                  alt={currentProfile.full_name}
-                  className="w-full h-full object-cover"
+                  src={myProfile.avatar_url}
+                  alt={myProfile.full_name}
+                  className="w-14 h-14 rounded-full object-cover border-2 border-amber-500"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-stone-600">
-                  Sin Archivos Multimedia
+                <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
+                  {myProfile.full_name?.charAt(0) || 'M'}
                 </div>
               )}
-              <div className="absolute bottom-3 left-3 bg-stone-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-stone-800 text-xs font-semibold text-stone-300">
-                📍 {currentProfile.zone}
+
+              <div>
+                <h3 className="font-bold text-stone-100 text-lg leading-tight">
+                  {myProfile.full_name}
+                </h3>
+                <p className="text-xs text-amber-500">@{myProfile.username}</p>
+                {(myProfile.location_zone || myProfile.zone) && (
+                  <p className="text-[11px] text-stone-400">
+                    📍 {myProfile.location_zone || myProfile.zone}
+                  </p>
+                )}
               </div>
             </div>
-
-            {/* Detalles del Usuario */}
-            <div className="px-6 space-y-3">
-              <div>
-                <h2 className="text-2xl font-bold">{currentProfile.full_name}</h2>
-                <p className="text-xs text-amber-500">@{currentProfile.username}</p>
-              </div>
-
-              {currentProfile.bio && (
-                <p className="text-xs text-stone-400 line-clamp-3">{currentProfile.bio}</p>
-              )}
-
-              {/* Instrumentos */}
-              <div>
-                <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">Instrumentos</span>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {currentProfile.instruments?.map((inst) => (
-                    <span key={inst} className="bg-stone-800 text-stone-200 text-xs px-2.5 py-1 rounded-md">
-                      {inst}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Géneros */}
-              <div>
-                <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">Estilos</span>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {currentProfile.genres?.map((g) => (
-                    <span key={g} className="bg-amber-950/60 border border-amber-800/50 text-amber-300 text-xs px-2.5 py-1 rounded-md">
-                      {g}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Botones de Acción */}
-            <div className="flex justify-center items-center gap-6 pt-2">
-              <button
-                onClick={() => handleSwipe('pass')}
-                className="w-14 h-14 rounded-full bg-stone-800 hover:bg-red-950/50 border border-stone-700 hover:border-red-500 text-red-500 text-xl font-bold transition flex items-center justify-center shadow-lg"
-              >
-                ✕
-              </button>
-              <button
-                onClick={() => handleSwipe('like')}
-                className="w-14 h-14 rounded-full bg-amber-500 hover:bg-amber-400 text-stone-950 text-2xl font-bold transition flex items-center justify-center shadow-lg"
-              >
-                ♥
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center space-y-3">
-            <p className="text-xl font-semibold text-stone-300">¡Has visto todos los perfiles disponibles!</p>
-            <p className="text-xs text-stone-500">Vuelve más tarde para descubrir más músicos cerca de ti.</p>
-          </div>
+          </section>
         )}
+
+        {/* --- SECCIÓN: BARRA DE BÚSQUEDA Y FILTROS --- */}
+        <div className="bg-stone-900 border border-stone-800 p-4 rounded-2xl flex flex-wrap gap-3 items-center shadow-lg">
+          <input
+            type="text"
+            placeholder="Buscar por nombre..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 flex-1 min-w-[200px] text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+          />
+          <input
+            type="text"
+            placeholder="Instrumento (ej. Guitarra)"
+            value={instrumentFilter}
+            onChange={(e) => setInstrumentFilter(e.target.value)}
+            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 w-full sm:w-48 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+          />
+          <input
+            type="text"
+            placeholder="Zona o Ciudad"
+            value={zoneFilter}
+            onChange={(e) => setZoneFilter(e.target.value)}
+            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 w-full sm:w-48 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+          />
+        </div>
+
+        {/* --- SECCIÓN: DIRECTORIO PÚBLICO PERMANENTE --- */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-stone-200">
+            Directorio de Músicos ({filteredProfiles.length})
+          </h2>
+
+          {loading ? (
+            <p className="text-stone-400 text-center py-8">Cargando directorio de músicos...</p>
+          ) : filteredProfiles.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredProfiles.map((profile) => {
+                const isSaved = savedContactIds.includes(profile.id)
+
+                return (
+                  <div
+                    key={profile.id}
+                    className="bg-stone-900 border border-stone-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4"
+                  >
+                    <div className="space-y-3">
+                      {/* Cabecera del perfil */}
+                      <div className="flex items-center gap-3">
+                        {profile.avatar_url ? (
+                          <img
+                            src={profile.avatar_url}
+                            alt={profile.full_name}
+                            className="w-14 h-14 rounded-full object-cover border border-amber-500/40"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
+                            {(profile.full_name || 'M').charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-stone-100 text-base leading-tight">
+                            {profile.display_name || profile.full_name}
+                          </h3>
+                          <p className="text-xs text-amber-500">@{profile.username}</p>
+                          <p className="text-xs text-stone-400 mt-0.5">
+                            📍 {profile.location_zone || profile.zone || 'Sin ubicación'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Bio */}
+                      {profile.bio && (
+                        <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
+                          {profile.bio}
+                        </p>
+                      )}
+
+                      {/* Instrumentos */}
+                      {profile.instruments && profile.instruments.length > 0 && (
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
+                            Instrumentos
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {profile.instruments.map((inst) => (
+                              <span
+                                key={inst}
+                                className="bg-stone-800 text-stone-200 text-xs px-2.5 py-0.5 rounded-md border border-stone-700"
+                              >
+                                {inst}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Vídeo de presentación si existe */}
+                      {profile.video_url && (
+                        <div className="rounded-xl overflow-hidden border border-stone-800 bg-stone-950 max-h-36">
+                          <video
+                            src={profile.video_url}
+                            controls
+                            className="w-full h-36 object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* BOTONES DIRECTOS (SIN MATCH) */}
+                    <div className="pt-3 border-t border-stone-800 flex gap-2">
+                      <button
+                        onClick={() => handleSaveContact(profile.id)}
+                        disabled={isSaved}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          isSaved
+                            ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-stone-700'
+                            : 'bg-stone-800 hover:bg-stone-700 text-amber-500 border border-amber-500/30'
+                        }`}
+                      >
+                        {isSaved ? '✓ En tu Agenda' : '➕ Guardar Contacto'}
+                      </button>
+
+                      <a
+                        href={`/messages?user=${profile.id}`}
+                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 py-2 px-3 rounded-xl text-xs font-bold text-center transition flex items-center justify-center gap-1.5"
+                      >
+                        💬 Contactar
+                      </a>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-stone-900 border border-stone-800 rounded-2xl">
+              <p className="text-stone-300 font-semibold">No se encontraron músicos.</p>
+              <p className="text-xs text-stone-500 mt-1">Prueba a cambiar tus filtros de búsqueda.</p>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   )

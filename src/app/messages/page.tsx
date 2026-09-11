@@ -1,31 +1,54 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import Navbar from '@/components/Navbar';
-import { User, MessageSquare, Send, Check } from 'lucide-react';
+import { User, MessageSquare, Send, AlertTriangle } from 'lucide-react';
+import { checkContentSafety } from '@/lib/moderation';
 
-type AcceptedConnection = {
+type Profile = {
   id: string;
-  partner_id: string;
-  partner_name: string;
-  partner_avatar: string | null;
-  last_message?: string;
-  updated_at: string;
+  display_name: string;
+  username: string;
+  avatar_url: string | null;
+};
+
+type Conversation = {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  created_at: string;
+  partner?: Profile;
+};
+
+type Message = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
 };
 
 export default function MessagesPage() {
   const router = useRouter();
-  const [connections, setConnections] = useState<AcceptedConnection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 1. Cargar usuario y conversaciones activas
   useEffect(() => {
     let isMounted = true;
 
-    const fetchAcceptedConnections = async () => {
+    const fetchConversations = async () => {
       try {
-        const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
         if (!user) {
@@ -33,17 +56,18 @@ export default function MessagesPage() {
           return;
         }
 
-        // Buscar conexiones aceptadas donde el usuario sea sender o receiver
-        const { data, error } = await supabase
-          .from('connections')
+        if (isMounted) setCurrentUserId(user.id);
+
+        const { data: convs, error } = await supabase
+          .from('conversations')
           .select('*')
-          .eq('status', 'accepted')
-          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+          .order('created_at', { ascending: false });
 
-        if (error) console.error('Error fetching connections:', error);
+        if (error) console.error('Error fetching conversations:', error);
 
-        if (data && data.length > 0) {
-          const partnerIds = data.map(c => (c.sender_id === user.id ? c.receiver_id : c.sender_id));
+        if (convs && convs.length > 0) {
+          const partnerIds = convs.map(c => (c.user1_id === user.id ? c.user2_id : c.user1_id));
 
           const { data: profiles } = await supabase
             .from('profiles')
@@ -52,20 +76,18 @@ export default function MessagesPage() {
 
           const profilesMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
 
-          const formatted: AcceptedConnection[] = data.map(c => {
-            const partnerId = c.sender_id === user.id ? c.receiver_id : c.sender_id;
-            const profile = profilesMap[partnerId];
+          const formatted: Conversation[] = convs.map(c => {
+            const partnerId = c.user1_id === user.id ? c.user2_id : c.user1_id;
             return {
-              id: c.id,
-              partner_id: partnerId,
-              partner_name: profile?.display_name || 'Músico',
-              partner_avatar: profile?.avatar_url || null,
-              last_message: c.message || '¡Conexión de Jam aceptada!',
-              updated_at: c.created_at,
+              ...c,
+              partner: profilesMap[partnerId],
             };
           });
 
-          if (isMounted) setConnections(formatted);
+          if (isMounted) {
+            setConversations(formatted);
+            setSelectedConv(formatted[0]); // Selecciona la primera conversación por defecto
+          }
         }
       } catch (err) {
         console.error('Error:', err);
@@ -74,85 +96,277 @@ export default function MessagesPage() {
       }
     };
 
-    fetchAcceptedConnections();
+    fetchConversations();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [router, supabase]);
+
+  // 2. Cargar mensajes de la conversación activa y escuchar en tiempo real
+  useEffect(() => {
+    if (!selectedConv) return;
+
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from('direct_messages')
+        .select('*')
+        .eq('conversation_id', selectedConv.id)
+        .order('created_at', { ascending: true });
+
+      if (data) setMessages(data);
+    };
+
+    fetchMessages();
+
+    // Suscripción Realtime
+    const channel = supabase
+      .channel(`chat:${selectedConv.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'direct_messages',
+          filter: `conversation_id=eq.${selectedConv.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          setMessages(prev => [...prev, newMsg]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConv, supabase]);
+
+  // Auto-scroll al final del chat
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // 3. Enviar mensaje con filtro de moderación y expulsión
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedConv || !currentUserId) return;
+
+    const textToSend = newMessage.trim();
+    setSending(true);
+
+    // MODERACIÓN DE CONTENIDO
+    const safetyCheck = checkContentSafety(textToSend);
+
+    if (!safetyCheck.isSafe) {
+      // Registrar expulsión en la base de datos
+      await supabase.from('banned_users').insert({
+        user_id: currentUserId,
+        reason: safetyCheck.reason || 'Contenido o vocabulario inapropiado en chat privado.',
+      });
+
+      await supabase.from('profiles').update({ is_configured: false }).eq('id', currentUserId);
+      await supabase.auth.signOut();
+
+      alert('⚠️ Tu cuenta ha sido suspendida permanentemente por incumplir las normas de conducta de la comunidad.');
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('direct_messages').insert({
+        conversation_id: selectedConv.id,
+        sender_id: currentUserId,
+        content: textToSend,
+      });
+
+      if (error) throw error;
+      setNewMessage('');
+    } catch (err: any) {
+      alert('Error al enviar el mensaje: ' + err.message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#121212', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#121212', color: '#fff', fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column' }}>
       <Navbar />
 
-      <main style={{ maxWidth: '750px', margin: '0 auto', padding: '2rem 1.5rem' }}>
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '0.5rem' }}>
-          Mensajes & Jams Confirmadas
-        </h1>
-        <p style={{ color: '#aaa', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
-          Músicos con los que tienes una propuesta de Jam aceptada.
-        </p>
+      <main style={{ maxWidth: '1000px', width: '100%', margin: '0 auto', padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Banner de convivencia */}
+        <div style={{ backgroundColor: '#2a1a16', border: '1px solid #5c2619', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.85rem', color: '#fca5a5' }}>
+          <AlertTriangle size={20} color="#e05638" style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Comunidad Exclusiva para Músicos:</strong> Queda prohibido el contenido inapropiado o mensajes ajenos a la colaboración musical. El incumplimiento conlleva la <strong>expulsión automática</strong> de la plataforma.
+          </span>
+        </div>
 
-        {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: '#888' }}>
-            Cargando conversaciones...
+        <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1rem', backgroundColor: '#1e1e1e', border: '1px solid #2e2e2e', borderRadius: '12px', minHeight: '520px', overflow: 'hidden', flex: 1 }}>
+          
+          {/* COLUMNA IZQUIERDA: LISTA DE CONVERSACIONES */}
+          <div style={{ borderRight: '1px solid #2e2e2e', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '1rem', borderBottom: '1px solid #2e2e2e' }}>
+              <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Mensajes Directos</h2>
+              <p style={{ color: '#888', fontSize: '0.8rem', margin: '2px 0 0 0' }}>Músicos interesados en tocar</p>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {loading ? (
+                <p style={{ padding: '1rem', color: '#888', fontSize: '0.85rem' }}>Cargando conversaciones...</p>
+              ) : conversations.length === 0 ? (
+                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#888', fontSize: '0.85rem' }}>
+                  <MessageSquare size={28} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
+                  <p>No tienes conversaciones aún. Encuentra músicos en el directorio y envíales un mensaje.</p>
+                </div>
+              ) : (
+                conversations.map((c) => {
+                  const isSelected = selectedConv?.id === c.id;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => setSelectedConv(c)}
+                      style={{
+                        padding: '0.85rem 1rem',
+                        borderBottom: '1px solid #2a2a2a',
+                        backgroundColor: isSelected ? '#2a2a2a' : 'transparent',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        borderLeft: isSelected ? '4px solid #e05638' : '4px solid transparent',
+                      }}
+                    >
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                        {c.partner?.avatar_url ? (
+                          <img src={c.partner.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <User size={20} color="#e05638" />
+                        )}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {c.partner?.display_name || 'Músico'}
+                        </h4>
+                        <p style={{ color: '#888', fontSize: '0.75rem', margin: '2px 0 0 0' }}>
+                          @{c.partner?.username || 'usuario'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
-        ) : connections.length === 0 ? (
-          <div style={{ padding: '3rem 2rem', textAlign: 'center', color: '#888', border: '1px dashed #333', borderRadius: '12px' }}>
-            <MessageSquare size={36} style={{ marginBottom: '0.75rem', opacity: 0.5 }} />
-            <p>Aún no tienes ninguna Jam confirmada. Cuando acepten tus solicitudes o aceptes una recibida, aparecerán aquí.</p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            {connections.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  backgroundColor: '#1e1e1e',
-                  border: '1px solid #2e2e2e',
-                  borderRadius: '12px',
-                  padding: '1rem 1.25rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ width: '46px', height: '46px', borderRadius: '50%', backgroundColor: '#2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <User size={22} color="#e05638" />
+
+          {/* COLUMNA DERECHA: SALA DE CHAT */}
+          <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#161616' }}>
+            {selectedConv ? (
+              <>
+                {/* CABECERA CHAT */}
+                <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #2e2e2e', backgroundColor: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {selectedConv.partner?.avatar_url ? (
+                        <img src={selectedConv.partner.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <User size={18} color="#e05638" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>
+                        {selectedConv.partner?.display_name}
+                      </h3>
+                      <p style={{ color: '#888', fontSize: '0.75rem', margin: 0 }}>
+                        @{selectedConv.partner?.username}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>
-                      {item.partner_name}
-                    </h3>
-                    <p style={{ color: '#888', fontSize: '0.85rem', margin: '3px 0 0 0', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Check size={14} color="#4ade80" /> Jam aceptada
-                    </p>
-                  </div>
+
+                  <button
+                    onClick={() => router.push(`/profile/${selectedConv.partner?.id}`)}
+                    style={{ padding: '0.35rem 0.75rem', backgroundColor: '#2a2a2a', color: '#ccc', border: '1px solid #3d3d3d', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                  >
+                    Ver Perfil
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => router.push(`/profile/${item.partner_id}`)}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#e05638',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  Ver Perfil
-                </button>
+                {/* HISTORIAL MENSAJES */}
+                <div style={{ flex: 1, padding: '1rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {messages.map((m) => {
+                    const isMe = m.sender_id === currentUserId;
+                    return (
+                      <div
+                        key={m.id}
+                        style={{
+                          alignSelf: isMe ? 'flex-end' : 'flex-start',
+                          maxWidth: '70%',
+                          backgroundColor: isMe ? '#e05638' : '#2a2a2a',
+                          color: '#fff',
+                          padding: '0.65rem 0.9rem',
+                          borderRadius: '12px',
+                          fontSize: '0.85rem',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        <p style={{ margin: 0, wordBreak: 'break-word' }}>{m.content}</p>
+                        <span style={{ display: 'block', fontSize: '0.65rem', color: isMe ? '#ffcdcd' : '#888', marginTop: '4px', textAlign: 'right' }}>
+                          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* FORMULARIO DE ENVÍO */}
+                <form onSubmit={handleSendMessage} style={{ padding: '0.85rem', borderTop: '1px solid #2e2e2e', backgroundColor: '#1e1e1e', display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Escribe un mensaje proponiendo un ensayo o colaboración..."
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#121212',
+                      border: '1px solid #333',
+                      borderRadius: '8px',
+                      padding: '0.6rem 0.85rem',
+                      color: '#fff',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={sending || !newMessage.trim()}
+                    style={{
+                      padding: '0.6rem 1rem',
+                      backgroundColor: '#e05638',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      opacity: sending || !newMessage.trim() ? 0.5 : 1,
+                    }}
+                  >
+                    <Send size={15} />
+                    Enviar
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: '0.85rem', textAlign: 'center', padding: '2rem' }}>
+                Selecciona una conversación a la izquierda para ver los mensajes.
               </div>
-            ))}
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   );
