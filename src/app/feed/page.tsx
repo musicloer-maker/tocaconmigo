@@ -27,9 +27,10 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
-  // Estados para los filtros
+  // Estados para los filtros dinámicos (Opción 1: Cliente)
   const [searchTerm, setSearchTerm] = useState('')
   const [instrumentFilter, setInstrumentFilter] = useState('')
+  const [genreFilter, setGenreFilter] = useState('')
   const [zoneFilter, setZoneFilter] = useState('')
 
   // Modal de reporte / moderación
@@ -123,11 +124,21 @@ export default function FeedPage() {
     }
   }
 
-  // Filtrado local
+  // Función para resetear todos los filtros
+  const handleResetFilters = () => {
+    setSearchTerm('')
+    setInstrumentFilter('')
+    setGenreFilter('')
+    setZoneFilter('')
+  }
+
+  // Filtrado local en tiempo real (Opción 1)
   const filteredProfiles = profiles.filter((p) => {
     const name = p.display_name || p.full_name || ''
+    const username = p.username || ''
     const matchesSearch =
       name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      username.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.bio?.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesInstrument = instrumentFilter
@@ -136,13 +147,21 @@ export default function FeedPage() {
         )
       : true
 
+    const matchesGenre = genreFilter
+      ? p.genres?.some((g) =>
+          g.toLowerCase().includes(genreFilter.toLowerCase())
+        )
+      : true
+
     const zoneText = p.location_zone || p.zone || ''
     const matchesZone = zoneFilter
       ? zoneText.toLowerCase().includes(zoneFilter.toLowerCase())
       : true
 
-    return matchesSearch && matchesInstrument && matchesZone
+    return matchesSearch && matchesInstrument && matchesGenre && matchesZone
   })
+
+  const hasActiveFilters = searchTerm || instrumentFilter || genreFilter || zoneFilter
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col">
@@ -197,36 +216,64 @@ export default function FeedPage() {
           </section>
         )}
 
-        {/* --- BARRA DE FILTROS --- */}
-        <div className="bg-stone-900 border border-stone-800 p-4 rounded-2xl flex flex-wrap gap-3 items-center shadow-lg">
-          <input
-            type="text"
-            placeholder="Buscar por nombre..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 flex-1 min-w-[200px] text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-          />
-          <input
-            type="text"
-            placeholder="Instrumento (ej. Guitarra)"
-            value={instrumentFilter}
-            onChange={(e) => setInstrumentFilter(e.target.value)}
-            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 w-full sm:w-48 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-          />
-          <input
-            type="text"
-            placeholder="Zona o Ciudad"
-            value={zoneFilter}
-            onChange={(e) => setZoneFilter(e.target.value)}
-            className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 w-full sm:w-48 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-          />
-        </div>
+        {/* --- BARRA DE FILTROS AVANZADOS --- */}
+        <section className="bg-stone-900 border border-stone-800 p-4 rounded-2xl space-y-3 shadow-lg">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+              🔍 Filtrar Directorio de Músicos
+            </h2>
+            {hasActiveFilters && (
+              <button
+                onClick={handleResetFilters}
+                className="text-xs text-amber-500 hover:text-amber-400 font-semibold underline"
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input
+              type="text"
+              placeholder="Buscar por nombre o @user..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+            />
+            <input
+              type="text"
+              placeholder="Instrumento (ej. Batería)"
+              value={instrumentFilter}
+              onChange={(e) => setInstrumentFilter(e.target.value)}
+              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+            />
+            <input
+              type="text"
+              placeholder="Género (ej. Rock, Jazz)"
+              value={genreFilter}
+              onChange={(e) => setGenreFilter(e.target.value)}
+              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+            />
+            <input
+              type="text"
+              placeholder="Ciudad / Zona"
+              value={zoneFilter}
+              onChange={(e) => setZoneFilter(e.target.value)}
+              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
+            />
+          </div>
+        </section>
 
         {/* --- DIRECTORIO PÚBLICO --- */}
         <div className="space-y-4">
-          <h2 className="text-xl font-bold text-stone-200">
-            Directorio de Músicos ({filteredProfiles.length})
-          </h2>
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold text-stone-200">
+              Directorio de Músicos
+            </h2>
+            <span className="text-xs font-semibold bg-stone-800 border border-stone-700 text-amber-500 px-3 py-1 rounded-full">
+              {filteredProfiles.length} {filteredProfiles.length === 1 ? 'músico' : 'músicos'}
+            </span>
+          </div>
 
           {loading ? (
             <p className="text-stone-400 text-center py-8">Cargando directorio de músicos...</p>
@@ -283,24 +330,44 @@ export default function FeedPage() {
                         </p>
                       )}
 
-                      {/* Instrumentos */}
-                      {profile.instruments && profile.instruments.length > 0 && (
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
-                            Instrumentos
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {profile.instruments.map((inst) => (
-                              <span
-                                key={inst}
-                                className="bg-stone-800 text-stone-200 text-xs px-2.5 py-0.5 rounded-md border border-stone-700"
-                              >
-                                {inst}
-                              </span>
-                            ))}
+                      {/* Instrumentos y Géneros */}
+                      <div className="space-y-2">
+                        {profile.instruments && profile.instruments.length > 0 && (
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
+                              Instrumentos
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {profile.instruments.map((inst) => (
+                                <span
+                                  key={inst}
+                                  className="bg-stone-800 text-stone-200 text-xs px-2.5 py-0.5 rounded-md border border-stone-700"
+                                >
+                                  {inst}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                        {profile.genres && profile.genres.length > 0 && (
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
+                              Estilos
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {profile.genres.map((g) => (
+                                <span
+                                  key={g}
+                                  className="bg-amber-500/10 text-amber-400 text-xs px-2 py-0.5 rounded-md border border-amber-500/20"
+                                >
+                                  {g}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Vídeo de presentación */}
                       {profile.video_url && (
@@ -340,9 +407,17 @@ export default function FeedPage() {
               })}
             </div>
           ) : (
-            <div className="text-center py-12 bg-stone-900 border border-stone-800 rounded-2xl">
+            <div className="text-center py-12 bg-stone-900 border border-stone-800 rounded-2xl space-y-2">
               <p className="text-stone-300 font-semibold">No se encontraron músicos.</p>
-              <p className="text-xs text-stone-500 mt-1">Prueba a cambiar tus filtros de búsqueda.</p>
+              <p className="text-xs text-stone-500">Prueba a cambiar tus filtros o limpiar la búsqueda.</p>
+              {hasActiveFilters && (
+                <button
+                  onClick={handleResetFilters}
+                  className="mt-2 text-xs bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-4 py-2 rounded-xl transition inline-block"
+                >
+                  Limpiar Filtros
+                </button>
+              )}
             </div>
           )}
         </div>

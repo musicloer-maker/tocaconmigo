@@ -1,6 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Lista de correos autorizados para administrar la plataforma
+const ADMIN_EMAILS = ['tu-email-de-admin@gmail.com']
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -52,7 +55,15 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 2. Control de acceso por rutas
+  // 2. Control de acceso exclusivo a la ruta /admin
+  if (pathname.startsWith('/admin')) {
+    if (!user || !user.email || !ADMIN_EMAILS.includes(user.email)) {
+      url.pathname = '/feed'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // 3. Control de acceso por rutas privadas
   const privateRoutes = ['/feed', '/matches', '/profile', '/dashboard', '/connections', '/messages']
   const isPrivateRoute = privateRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + '/')
