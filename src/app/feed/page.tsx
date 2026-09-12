@@ -1,488 +1,310 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Navbar from '@/components/Navbar'
-import { addContact } from '@/app/actions/contacts'
+import { Search, MessageSquare, MapPin, Music, User, UserPlus, Check, AlertCircle } from 'lucide-react'
 
-interface Profile {
+type Profile = {
   id: string
-  full_name: string
-  display_name?: string
+  display_name: string
+  full_name?: string
   username: string
-  avatar_url: string
-  bio: string
-  video_url: string
-  zone: string
-  location_zone?: string
-  instruments: string[]
-  genres: string[]
+  location?: string
+  instrument?: string
+  genres?: string
+  bio?: string
+  avatar_url?: string
+  video_url?: string
 }
 
 export default function FeedPage() {
+  const router = useRouter()
   const supabase = createClient()
-  const [myProfile, setMyProfile] = useState<Profile | null>(null)
+
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [savedContactIds, setSavedContactIds] = useState<string[]>([])
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
-  // Estados para los filtros dinámicos (Opción 1: Cliente)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [instrumentFilter, setInstrumentFilter] = useState('')
-  const [genreFilter, setGenreFilter] = useState('')
-  const [zoneFilter, setZoneFilter] = useState('')
-
-  // Modal de reporte / moderación
-  const [reportingUser, setReportingUser] = useState<Profile | null>(null)
-  const [reportReason, setReportReason] = useState('Lenguaje inapropiado / soez')
-  const [reportDetails, setReportDetails] = useState('')
-  const [reportSending, setReportSending] = useState(false)
-  const [reportSuccess, setReportSuccess] = useState(false)
-
-  const [isPending, startTransition] = useTransition()
+  // Estado para gestionar los IDs de los contactos agregados y en proceso
+  const [contactIds, setContactIds] = useState<Set<string>>(new Set())
+  const [addingContactId, setAddingContactId] = useState<string | null>(null)
 
   useEffect(() => {
-    async function fetchData() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      setCurrentUserId(user.id)
+    let isMounted = true
 
-      // 1. Obtener mi propio perfil
-      const { data: userSelfProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+    const fetchUserAndProfiles = async () => {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
 
-      if (userSelfProfile) {
-        setMyProfile(userSelfProfile)
+        if (userError || !user) {
+          router.push('/login')
+          return
+        }
+
+        if (isMounted) setCurrentUserId(user.id)
+
+        // 1. Cargar la lista de contactos del usuario actual
+        const { data: contactsData, error: contactsError } = await supabase
+          .from('contacts')
+          .select('contact_id')
+          .eq('user_id', user.id)
+
+        if (!contactsError && contactsData && isMounted) {
+          const ids = new Set(contactsData.map((c: { contact_id: string }) => c.contact_id))
+          setContactIds(ids)
+        }
+
+        // 2. Cargar todos los perfiles de músicos
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.error('Error al consultar Supabase:', error)
+          if (isMounted) {
+            setErrorMessage('Error de lectura en la base de datos (verifica las políticas RLS en Supabase).')
+          }
+        } else if (data && isMounted) {
+          setProfiles(data)
+        }
+      } catch (err: any) {
+        console.error('Error inesperado:', err)
+        if (isMounted) setErrorMessage(err.message || 'Error inesperado al cargar perfiles.')
+      } finally {
+        if (isMounted) setLoading(false)
       }
-
-      // 2. Obtener lista de IDs de contactos guardados
-      const { data: contactsData } = await supabase
-        .from('contacts')
-        .select('contact_id')
-        .eq('user_id', user.id)
-
-      if (contactsData) {
-        setSavedContactIds(contactsData.map((c) => c.contact_id))
-      }
-
-      // 3. Obtener todos los músicos (directorio permanente)
-      const { data: availableProfiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', user.id)
-
-      if (availableProfiles) {
-        setProfiles(availableProfiles)
-      }
-      setLoading(false)
     }
 
-    fetchData()
-  }, [supabase])
+    fetchUserAndProfiles()
 
-  // Guardar contacto
-  const handleSaveContact = async (contactId: string) => {
+    return () => {
+      isMounted = false
+    }
+  }, [router, supabase])
+
+  // Función para añadir a un músico a la lista de contactos
+  const handleAddContact = async (contactId: string) => {
+    if (!currentUserId || contactIds.has(contactId) || addingContactId) return
+
+    setAddingContactId(contactId)
     try {
-      await addContact(contactId)
-      setSavedContactIds((prev) => [...prev, contactId])
+      const { error } = await supabase.from('contacts').insert([
+        {
+          user_id: currentUserId,
+          contact_id: contactId,
+        },
+      ])
+
+      if (error) {
+        console.error('Error al agregar contacto:', error)
+      } else {
+        setContactIds((prev) => new Set(prev).add(contactId))
+      }
     } catch (err) {
-      console.error('Error al guardar contacto:', err)
+      console.error('Error al intentar guardar contacto:', err)
+    } finally {
+      setAddingContactId(null)
     }
   }
 
-  // Enviar denuncia a moderación
-  const handleSendReport = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!reportingUser || !currentUserId) return
-
-    setReportSending(true)
-    const { error } = await supabase.from('reports').insert([
-      {
-        reporter_id: currentUserId,
-        reported_user_id: reportingUser.id,
-        reason: reportReason,
-        details: reportDetails,
-      },
-    ])
-
-    setReportSending(false)
-    if (!error) {
-      setReportSuccess(true)
-      setTimeout(() => {
-        setReportingUser(null)
-        setReportSuccess(false)
-        setReportDetails('')
-      }, 2000)
-    } else {
-      alert('Error al enviar la denuncia. Inténtalo de nuevo.')
-    }
-  }
-
-  // Función para resetear todos los filtros
-  const handleResetFilters = () => {
-    setSearchTerm('')
-    setInstrumentFilter('')
-    setGenreFilter('')
-    setZoneFilter('')
-  }
-
-  // Filtrado local en tiempo real (Opción 1)
   const filteredProfiles = profiles.filter((p) => {
-    const name = p.display_name || p.full_name || ''
-    const username = p.username || ''
-    const matchesSearch =
-      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.bio?.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const matchesInstrument = instrumentFilter
-      ? p.instruments?.some((inst) =>
-          inst.toLowerCase().includes(instrumentFilter.toLowerCase())
-        )
-      : true
-
-    const matchesGenre = genreFilter
-      ? p.genres?.some((g) =>
-          g.toLowerCase().includes(genreFilter.toLowerCase())
-        )
-      : true
-
-    const zoneText = p.location_zone || p.zone || ''
-    const matchesZone = zoneFilter
-      ? zoneText.toLowerCase().includes(zoneFilter.toLowerCase())
-      : true
-
-    return matchesSearch && matchesInstrument && matchesGenre && matchesZone
+    const query = search.toLowerCase()
+    return (
+      (p.display_name && p.display_name.toLowerCase().includes(query)) ||
+      (p.username && p.username.toLowerCase().includes(query)) ||
+      (p.location && p.location.toLowerCase().includes(query)) ||
+      (p.instrument && p.instrument.toLowerCase().includes(query)) ||
+      (p.genres && p.genres.toLowerCase().includes(query))
+    )
   })
 
-  const hasActiveFilters = searchTerm || instrumentFilter || genreFilter || zoneFilter
-
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col">
+    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col font-sans">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto w-full p-4 space-y-6">
-        {/* --- BANNER: NORMAS DE LA COMUNIDAD --- */}
-        <section className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-200/90 leading-relaxed">
-          <p className="font-bold text-amber-400 text-sm mb-1">
-            📜 Normas de la Comunidad TocaConmigo
-          </p>
-          Espacio exclusivo para músicos y colaboración musical. Se prohíbe estrictamente el lenguaje soez, despectivo, de naturaleza sexual, así como fotos o vídeos de desnudez explícita. El incumplimiento conlleva la **expulsión inmediata y permanente** de la plataforma.
-        </section>
+      <main className="max-w-6xl mx-auto w-full p-4 md:p-6 flex-1 flex flex-col space-y-6">
+        {/* Cabecera y Buscador */}
+        <div className="bg-stone-900 p-4 md:p-6 rounded-2xl border border-stone-800 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center shadow-xl">
+          <div>
+            <h1 className="text-xl font-black text-amber-500 tracking-tight">
+              Directorio de Músicos
+            </h1>
+            <p className="text-xs text-stone-400 mt-1">
+              Conecta, guarda contactos e inicia conversación directa con músicos cerca de ti.
+            </p>
+          </div>
 
-        {/* --- SECCIÓN: MI PERFIL --- */}
-        {myProfile && (
-          <section className="bg-stone-900 border border-amber-500/30 rounded-2xl p-4 shadow-xl space-y-3">
-            <div className="flex justify-between items-center border-b border-stone-800 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-500">
-                Así te ven otros músicos en el directorio
-              </span>
-              <a href="/profile" className="text-xs text-stone-400 hover:text-white underline">
-                Editar perfil
-              </a>
-            </div>
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Buscar por instrumento, ciudad o estilo..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-stone-950 border border-stone-800 rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-200 focus:outline-none focus:border-amber-500 placeholder-stone-500"
+            />
+          </div>
+        </div>
 
-            <div className="flex items-center gap-3">
-              {myProfile.avatar_url ? (
-                <img
-                  src={myProfile.avatar_url}
-                  alt={myProfile.full_name}
-                  className="w-14 h-14 rounded-full object-cover border-2 border-amber-500"
-                />
-              ) : (
-                <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
-                  {myProfile.full_name?.charAt(0) || 'M'}
-                </div>
-              )}
-
-              <div>
-                <h3 className="font-bold text-stone-100 text-lg leading-tight">
-                  {myProfile.full_name}
-                </h3>
-                <p className="text-xs text-amber-500">@{myProfile.username}</p>
-                {(myProfile.location_zone || myProfile.zone) && (
-                  <p className="text-[11px] text-stone-400">
-                    📍 {myProfile.location_zone || myProfile.zone}
-                  </p>
-                )}
-              </div>
-            </div>
-          </section>
+        {/* Mensaje de Error en caso de fallo de permisos/RLS */}
+        {errorMessage && (
+          <div className="bg-red-950/40 border border-red-800/60 p-4 rounded-xl flex items-center gap-3 text-red-300 text-xs">
+            <AlertCircle className="w-5 h-5 shrink-0 text-red-400" />
+            <span>{errorMessage}</span>
+          </div>
         )}
 
-        {/* --- BARRA DE FILTROS AVANZADOS --- */}
-        <section className="bg-stone-900 border border-stone-800 p-4 rounded-2xl space-y-3 shadow-lg">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xs font-bold text-stone-400 uppercase tracking-wider">
-              🔍 Filtrar Directorio de Músicos
-            </h2>
-            {hasActiveFilters && (
-              <button
-                onClick={handleResetFilters}
-                className="text-xs text-amber-500 hover:text-amber-400 font-semibold underline"
-              >
-                Limpiar filtros
-              </button>
-            )}
+        {/* Lista permanente de usuarios */}
+        {loading ? (
+          <div className="text-center py-20 text-xs text-stone-500">
+            Cargando directorio de músicos...
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <input
-              type="text"
-              placeholder="Buscar por nombre o @user..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-            />
-            <input
-              type="text"
-              placeholder="Instrumento (ej. Batería)"
-              value={instrumentFilter}
-              onChange={(e) => setInstrumentFilter(e.target.value)}
-              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-            />
-            <input
-              type="text"
-              placeholder="Género (ej. Rock, Jazz)"
-              value={genreFilter}
-              onChange={(e) => setGenreFilter(e.target.value)}
-              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-            />
-            <input
-              type="text"
-              placeholder="Ciudad / Zona"
-              value={zoneFilter}
-              onChange={(e) => setZoneFilter(e.target.value)}
-              className="bg-stone-950 text-stone-100 px-4 py-2.5 rounded-xl border border-stone-800 text-sm focus:outline-none focus:border-amber-500 placeholder-stone-500"
-            />
+        ) : filteredProfiles.length === 0 ? (
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl p-12 text-center text-stone-400 text-xs flex flex-col items-center gap-3">
+            <User className="w-8 h-8 opacity-40 text-amber-500" />
+            <p>
+              {search
+                ? 'No se encontraron músicos con esos criterios de búsqueda.'
+                : 'No se encontraron perfiles registrados en la base de datos.'}
+            </p>
           </div>
-        </section>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredProfiles.map((p) => {
+              const isMe = p.id === currentUserId
+              const isContact = contactIds.has(p.id)
+              const isAdding = addingContactId === p.id
 
-        {/* --- DIRECTORIO PÚBLICO --- */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-stone-200">
-              Directorio de Músicos
-            </h2>
-            <span className="text-xs font-semibold bg-stone-800 border border-stone-700 text-amber-500 px-3 py-1 rounded-full">
-              {filteredProfiles.length} {filteredProfiles.length === 1 ? 'músico' : 'músicos'}
-            </span>
-          </div>
-
-          {loading ? (
-            <p className="text-stone-400 text-center py-8">Cargando directorio de músicos...</p>
-          ) : filteredProfiles.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredProfiles.map((profile) => {
-                const isSaved = savedContactIds.includes(profile.id)
-
-                return (
-                  <div
-                    key={profile.id}
-                    className="bg-stone-900 border border-stone-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4 relative"
-                  >
-                    <div className="space-y-3">
-                      {/* Cabecera del perfil */}
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          {profile.avatar_url ? (
-                            <img
-                              src={profile.avatar_url}
-                              alt={profile.full_name}
-                              className="w-14 h-14 rounded-full object-cover border border-amber-500/40"
-                            />
-                          ) : (
-                            <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
-                              {(profile.full_name || 'M').charAt(0)}
-                            </div>
-                          )}
-                          <div>
-                            <h3 className="font-bold text-stone-100 text-base leading-tight">
-                              {profile.display_name || profile.full_name}
-                            </h3>
-                            <p className="text-xs text-amber-500">@{profile.username}</p>
-                            <p className="text-xs text-stone-400 mt-0.5">
-                              📍 {profile.location_zone || profile.zone || 'Sin ubicación'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Botón de Denuncia (Moderación) */}
-                        <button
-                          onClick={() => setReportingUser(profile)}
-                          title="Reportar usuario por incumplir normas"
-                          className="text-stone-500 hover:text-red-400 text-xs p-1 rounded transition"
-                        >
-                          🚩
-                        </button>
-                      </div>
-
-                      {/* Bio */}
-                      {profile.bio && (
-                        <p className="text-xs text-stone-300 line-clamp-2 leading-relaxed">
-                          {profile.bio}
-                        </p>
-                      )}
-
-                      {/* Instrumentos y Géneros */}
-                      <div className="space-y-2">
-                        {profile.instruments && profile.instruments.length > 0 && (
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
-                              Instrumentos
-                            </span>
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                              {profile.instruments.map((inst) => (
-                                <span
-                                  key={inst}
-                                  className="bg-stone-800 text-stone-200 text-xs px-2.5 py-0.5 rounded-md border border-stone-700"
-                                >
-                                  {inst}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {profile.genres && profile.genres.length > 0 && (
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
-                              Estilos
-                            </span>
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                              {profile.genres.map((g) => (
-                                <span
-                                  key={g}
-                                  className="bg-amber-500/10 text-amber-400 text-xs px-2 py-0.5 rounded-md border border-amber-500/20"
-                                >
-                                  {g}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Vídeo de presentación */}
-                      {profile.video_url && (
-                        <div className="rounded-xl overflow-hidden border border-stone-800 bg-stone-950 max-h-36">
-                          <video
-                            src={profile.video_url}
-                            controls
-                            className="w-full h-36 object-cover"
+              return (
+                <div
+                  key={p.id}
+                  className={`bg-stone-900 border rounded-2xl p-5 flex flex-col justify-between space-y-4 transition shadow-lg ${
+                    isMe
+                      ? 'border-amber-500/50 bg-stone-900/90'
+                      : 'border-stone-800 hover:border-amber-500/40'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-stone-800 border border-stone-700 overflow-hidden flex items-center justify-center shrink-0">
+                        {p.avatar_url ? (
+                          <img
+                            src={p.avatar_url}
+                            alt=""
+                            className="w-full h-full object-cover"
                           />
+                        ) : (
+                          <User className="w-6 h-6 text-amber-500" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-stone-100 truncate">
+                            {p.display_name || p.full_name || 'Músico'}
+                          </h3>
+                          {isMe && (
+                            <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-semibold shrink-0">
+                              Tú
+                            </span>
+                          )}
                         </div>
-                      )}
+                        <p className="text-[11px] text-amber-500 truncate">
+                          @{p.username || 'usuario'}
+                        </p>
+                        {p.location && (
+                          <p className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-stone-500 shrink-0" />
+                            <span className="truncate">{p.location}</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    {/* BOTONES DIRECTOS */}
-                    <div className="pt-3 border-t border-stone-800 flex gap-2">
+                    {p.instrument && (
+                      <div className="flex items-center gap-1.5 text-xs text-stone-300 bg-stone-950 p-2.5 rounded-xl border border-stone-800/80">
+                        <Music className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="font-semibold truncate">{p.instrument}</span>
+                        {p.genres && (
+                          <span className="text-stone-500 truncate">• {p.genres}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {p.bio && (
+                      <p className="text-xs text-stone-400 line-clamp-3 leading-relaxed">
+                        {p.bio}
+                      </p>
+                    )}
+
+                    {p.video_url && (
+                      <div className="rounded-xl overflow-hidden bg-black aspect-video border border-stone-800 mt-2">
+                        <video
+                          src={p.video_url}
+                          controls
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Acciones de la tarjeta */}
+                  {!isMe ? (
+                    <div className="flex gap-2 mt-2">
+                      {/* Botón Guardar Contacto */}
                       <button
-                        onClick={() => handleSaveContact(profile.id)}
-                        disabled={isSaved}
-                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                          isSaved
-                            ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-stone-700'
-                            : 'bg-stone-800 hover:bg-stone-700 text-amber-500 border border-amber-500/30'
+                        onClick={() => handleAddContact(p.id)}
+                        disabled={isContact || isAdding}
+                        className={`flex-1 py-2.5 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border ${
+                          isContact
+                            ? 'bg-stone-950 text-emerald-400 border-emerald-900/50 cursor-default'
+                            : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700'
                         }`}
                       >
-                        {isSaved ? '✓ En tu Agenda' : '➕ Guardar Contacto'}
+                        {isContact ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Contacto</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-3.5 h-3.5 text-stone-400" />
+                            <span>{isAdding ? 'Añadiendo...' : 'Añadir'}</span>
+                          </>
+                        )}
                       </button>
 
-                      <a
-                        href={`/messages?user=${profile.id}`}
-                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 py-2 px-3 rounded-xl text-xs font-bold text-center transition flex items-center justify-center gap-1.5"
+                      {/* Botón Enviar Mensaje */}
+                      <button
+                        onClick={() => router.push(`/messages?user=${p.id}`)}
+                        className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5"
                       >
-                        💬 Contactar
-                      </a>
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Mensaje</span>
+                      </button>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-stone-900 border border-stone-800 rounded-2xl space-y-2">
-              <p className="text-stone-300 font-semibold">No se encontraron músicos.</p>
-              <p className="text-xs text-stone-500">Prueba a cambiar tus filtros o limpiar la búsqueda.</p>
-              {hasActiveFilters && (
-                <button
-                  onClick={handleResetFilters}
-                  className="mt-2 text-xs bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold px-4 py-2 rounded-xl transition inline-block"
-                >
-                  Limpiar Filtros
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* --- MODAL DE DENUNCIA A MODERACIÓN --- */}
-      {reportingUser && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="text-lg font-bold text-stone-100">
-              Reportar a @{reportingUser.username}
-            </h3>
-            
-            {reportSuccess ? (
-              <p className="text-green-400 text-sm py-4 text-center">
-                ✓ Denuncia enviada al equipo de moderación.
-              </p>
-            ) : (
-              <form onSubmit={handleSendReport} className="space-y-4">
-                <div>
-                  <label className="text-xs text-stone-400 block mb-1">Motivo</label>
-                  <select
-                    value={reportReason}
-                    onChange={(e) => setReportReason(e.target.value)}
-                    className="w-full bg-stone-950 text-stone-100 border border-stone-800 rounded-xl p-2.5 text-sm"
-                  >
-                    <option value="Lenguaje inapropiado / soez">Lenguaje inapropiado / soez</option>
-                    <option value="Contenido de naturaleza sexual">Contenido de naturaleza sexual</option>
-                    <option value="Fotos o vídeos explícitos">Fotos o vídeos explícitos</option>
-                    <option value="Spam / No es un perfil de músico">Spam / No es músico</option>
-                  </select>
+                  ) : (
+                    <button
+                      onClick={() => router.push('/profile')}
+                      className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs rounded-xl transition text-center mt-2 border border-stone-700"
+                    >
+                      Editar mi perfil
+                    </button>
+                  )}
                 </div>
-
-                <div>
-                  <label className="text-xs text-stone-400 block mb-1">Detalles opcionales</label>
-                  <textarea
-                    rows={3}
-                    value={reportDetails}
-                    onChange={(e) => setReportDetails(e.target.value)}
-                    placeholder="Describe brevemente el problema..."
-                    className="w-full bg-stone-950 text-stone-100 border border-stone-800 rounded-xl p-2.5 text-sm"
-                  />
-                </div>
-
-                <div className="flex gap-2 justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setReportingUser(null)}
-                    className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-white"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={reportSending}
-                    className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl"
-                  >
-                    {reportSending ? 'Enviando...' : 'Enviar Denuncia'}
-                  </button>
-                </div>
-              </form>
-            )}
+              )
+            })}
           </div>
-        </div>
-      )}
+        )}
+      </main>
     </div>
   )
 }
