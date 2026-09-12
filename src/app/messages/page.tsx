@@ -99,7 +99,7 @@ function MessagesContent() {
 
         // Si venimos del Feed con ?user=targetUserId
         if (targetUserId && targetUserId !== user.id) {
-          let existingConv = loadedConvs.find(
+          let existingConv: Conversation | undefined = loadedConvs.find(
             (c) =>
               (c.user1_id === user.id && c.user2_id === targetUserId) ||
               (c.user1_id === targetUserId && c.user2_id === user.id)
@@ -123,11 +123,13 @@ function MessagesContent() {
                 .eq('id', targetUserId)
                 .single()
 
-              existingConv = {
+              const createdConv: Conversation = {
                 ...newConvData,
                 partner: targetProfile || undefined,
               }
-              loadedConvs = [existingConv, ...loadedConvs]
+
+              existingConv = createdConv
+              loadedConvs = [createdConv, ...loadedConvs]
             }
           }
 
