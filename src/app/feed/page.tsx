@@ -32,6 +32,13 @@ export default function FeedPage() {
   const [instrumentFilter, setInstrumentFilter] = useState('')
   const [zoneFilter, setZoneFilter] = useState('')
 
+  // Modal de reporte / moderación
+  const [reportingUser, setReportingUser] = useState<Profile | null>(null)
+  const [reportReason, setReportReason] = useState('Lenguaje inapropiado / soez')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportSending, setReportSending] = useState(false)
+  const [reportSuccess, setReportSuccess] = useState(false)
+
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -53,7 +60,7 @@ export default function FeedPage() {
         setMyProfile(userSelfProfile)
       }
 
-      // 2. Obtener lista de IDs de contactos que ya tengo guardados
+      // 2. Obtener lista de IDs de contactos guardados
       const { data: contactsData } = await supabase
         .from('contacts')
         .select('contact_id')
@@ -63,12 +70,11 @@ export default function FeedPage() {
         setSavedContactIds(contactsData.map((c) => c.contact_id))
       }
 
-      // 3. Obtener todos los músicos configurados (directorio permanente)
+      // 3. Obtener todos los músicos (directorio permanente)
       const { data: availableProfiles } = await supabase
         .from('profiles')
         .select('*')
         .neq('id', user.id)
-        .eq('is_configured', true)
 
       if (availableProfiles) {
         setProfiles(availableProfiles)
@@ -79,7 +85,7 @@ export default function FeedPage() {
     fetchData()
   }, [supabase])
 
-  // Función para guardar contacto llamando a la Server Action del Paso 2
+  // Guardar contacto
   const handleSaveContact = async (contactId: string) => {
     try {
       await addContact(contactId)
@@ -89,7 +95,35 @@ export default function FeedPage() {
     }
   }
 
-  // Filtrado local instantáneo de los músicos
+  // Enviar denuncia a moderación
+  const handleSendReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!reportingUser || !currentUserId) return
+
+    setReportSending(true)
+    const { error } = await supabase.from('reports').insert([
+      {
+        reporter_id: currentUserId,
+        reported_user_id: reportingUser.id,
+        reason: reportReason,
+        details: reportDetails,
+      },
+    ])
+
+    setReportSending(false)
+    if (!error) {
+      setReportSuccess(true)
+      setTimeout(() => {
+        setReportingUser(null)
+        setReportSuccess(false)
+        setReportDetails('')
+      }, 2000)
+    } else {
+      alert('Error al enviar la denuncia. Inténtalo de nuevo.')
+    }
+  }
+
+  // Filtrado local
   const filteredProfiles = profiles.filter((p) => {
     const name = p.display_name || p.full_name || ''
     const matchesSearch =
@@ -115,7 +149,15 @@ export default function FeedPage() {
       <Navbar />
 
       <main className="flex-1 max-w-5xl mx-auto w-full p-4 space-y-6">
-        {/* --- SECCIÓN: MI PERFIL (ASÍ TE VEN LOS OTROS) --- */}
+        {/* --- BANNER: NORMAS DE LA COMUNIDAD --- */}
+        <section className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-200/90 leading-relaxed">
+          <p className="font-bold text-amber-400 text-sm mb-1">
+            📜 Normas de la Comunidad TocaConmigo
+          </p>
+          Espacio exclusivo para músicos y colaboración musical. Se prohíbe estrictamente el lenguaje soez, despectivo, de naturaleza sexual, así como fotos o vídeos de desnudez explícita. El incumplimiento conlleva la **expulsión inmediata y permanente** de la plataforma.
+        </section>
+
+        {/* --- SECCIÓN: MI PERFIL --- */}
         {myProfile && (
           <section className="bg-stone-900 border border-amber-500/30 rounded-2xl p-4 shadow-xl space-y-3">
             <div className="flex justify-between items-center border-b border-stone-800 pb-2">
@@ -155,7 +197,7 @@ export default function FeedPage() {
           </section>
         )}
 
-        {/* --- SECCIÓN: BARRA DE BÚSQUEDA Y FILTROS --- */}
+        {/* --- BARRA DE FILTROS --- */}
         <div className="bg-stone-900 border border-stone-800 p-4 rounded-2xl flex flex-wrap gap-3 items-center shadow-lg">
           <input
             type="text"
@@ -180,7 +222,7 @@ export default function FeedPage() {
           />
         </div>
 
-        {/* --- SECCIÓN: DIRECTORIO PÚBLICO PERMANENTE --- */}
+        {/* --- DIRECTORIO PÚBLICO --- */}
         <div className="space-y-4">
           <h2 className="text-xl font-bold text-stone-200">
             Directorio de Músicos ({filteredProfiles.length})
@@ -196,31 +238,42 @@ export default function FeedPage() {
                 return (
                   <div
                     key={profile.id}
-                    className="bg-stone-900 border border-stone-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4"
+                    className="bg-stone-900 border border-stone-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl space-y-4 relative"
                   >
                     <div className="space-y-3">
                       {/* Cabecera del perfil */}
-                      <div className="flex items-center gap-3">
-                        {profile.avatar_url ? (
-                          <img
-                            src={profile.avatar_url}
-                            alt={profile.full_name}
-                            className="w-14 h-14 rounded-full object-cover border border-amber-500/40"
-                          />
-                        ) : (
-                          <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
-                            {(profile.full_name || 'M').charAt(0)}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          {profile.avatar_url ? (
+                            <img
+                              src={profile.avatar_url}
+                              alt={profile.full_name}
+                              className="w-14 h-14 rounded-full object-cover border border-amber-500/40"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center text-amber-500 font-bold text-lg border border-stone-700">
+                              {(profile.full_name || 'M').charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <h3 className="font-bold text-stone-100 text-base leading-tight">
+                              {profile.display_name || profile.full_name}
+                            </h3>
+                            <p className="text-xs text-amber-500">@{profile.username}</p>
+                            <p className="text-xs text-stone-400 mt-0.5">
+                              📍 {profile.location_zone || profile.zone || 'Sin ubicación'}
+                            </p>
                           </div>
-                        )}
-                        <div>
-                          <h3 className="font-bold text-stone-100 text-base leading-tight">
-                            {profile.display_name || profile.full_name}
-                          </h3>
-                          <p className="text-xs text-amber-500">@{profile.username}</p>
-                          <p className="text-xs text-stone-400 mt-0.5">
-                            📍 {profile.location_zone || profile.zone || 'Sin ubicación'}
-                          </p>
                         </div>
+
+                        {/* Botón de Denuncia (Moderación) */}
+                        <button
+                          onClick={() => setReportingUser(profile)}
+                          title="Reportar usuario por incumplir normas"
+                          className="text-stone-500 hover:text-red-400 text-xs p-1 rounded transition"
+                        >
+                          🚩
+                        </button>
                       </div>
 
                       {/* Bio */}
@@ -249,7 +302,7 @@ export default function FeedPage() {
                         </div>
                       )}
 
-                      {/* Vídeo de presentación si existe */}
+                      {/* Vídeo de presentación */}
                       {profile.video_url && (
                         <div className="rounded-xl overflow-hidden border border-stone-800 bg-stone-950 max-h-36">
                           <video
@@ -261,7 +314,7 @@ export default function FeedPage() {
                       )}
                     </div>
 
-                    {/* BOTONES DIRECTOS (SIN MATCH) */}
+                    {/* BOTONES DIRECTOS */}
                     <div className="pt-3 border-t border-stone-800 flex gap-2">
                       <button
                         onClick={() => handleSaveContact(profile.id)}
@@ -294,6 +347,67 @@ export default function FeedPage() {
           )}
         </div>
       </main>
+
+      {/* --- MODAL DE DENUNCIA A MODERACIÓN --- */}
+      {reportingUser && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-stone-100">
+              Reportar a @{reportingUser.username}
+            </h3>
+            
+            {reportSuccess ? (
+              <p className="text-green-400 text-sm py-4 text-center">
+                ✓ Denuncia enviada al equipo de moderación.
+              </p>
+            ) : (
+              <form onSubmit={handleSendReport} className="space-y-4">
+                <div>
+                  <label className="text-xs text-stone-400 block mb-1">Motivo</label>
+                  <select
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="w-full bg-stone-950 text-stone-100 border border-stone-800 rounded-xl p-2.5 text-sm"
+                  >
+                    <option value="Lenguaje inapropiado / soez">Lenguaje inapropiado / soez</option>
+                    <option value="Contenido de naturaleza sexual">Contenido de naturaleza sexual</option>
+                    <option value="Fotos o vídeos explícitos">Fotos o vídeos explícitos</option>
+                    <option value="Spam / No es un perfil de músico">Spam / No es músico</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-stone-400 block mb-1">Detalles opcionales</label>
+                  <textarea
+                    rows={3}
+                    value={reportDetails}
+                    onChange={(e) => setReportDetails(e.target.value)}
+                    placeholder="Describe brevemente el problema..."
+                    className="w-full bg-stone-950 text-stone-100 border border-stone-800 rounded-xl p-2.5 text-sm"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setReportingUser(null)}
+                    className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={reportSending}
+                    className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl"
+                  >
+                    {reportSending ? 'Enviando...' : 'Enviar Denuncia'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
