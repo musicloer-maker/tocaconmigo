@@ -9,13 +9,14 @@ export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  
+
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [unreadCount, setUnreadCount] = useState<number>(0)
 
   useEffect(() => {
     async function loadUserData() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) return
 
       // Cargar foto de perfil para la barra
@@ -37,15 +38,14 @@ export default function Navbar() {
   }
 
   const navLinks = [
-    { label: '🔥 Descubrir', href: '/feed' },
-    { label: '💬 Matches', href: '/matches' },
+    { label: '🔍 Directorio', href: '/feed' },
+    { label: '💬 Mensajes', href: '/messages' },
     { label: '👤 Perfil', href: '/profile' },
   ]
 
   return (
     <header className="w-full bg-stone-900/80 backdrop-blur-md border-b border-stone-800 sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-        
         {/* LOGO */}
         <Link href="/feed" className="flex items-center gap-2">
           <span className="text-2xl font-black bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent tracking-wider">
@@ -92,7 +92,6 @@ export default function Navbar() {
             Salir
           </button>
         </div>
-
       </div>
     </header>
   )
